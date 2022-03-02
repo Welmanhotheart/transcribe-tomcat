@@ -6,4 +6,5 @@ public final class Constants {
      */
     public static final String CATALINA_HOME_PROP = "catalina.home";
     public static final String CATALINA_BASE_PROP = "catalina.base";
+    public static String Package = "org.apache.catalina.startup";
 }

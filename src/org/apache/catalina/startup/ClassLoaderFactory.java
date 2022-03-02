@@ -7,15 +7,19 @@ import java.io.File;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.net.URLClassLoader;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 public final class ClassLoaderFactory {
 
     private static final Log log = LogFactory.getLog(ClassLoaderFactory.class);
 
-    public static ClassLoader createClassLoader(List<Repository> repositories, ClassLoader parent) throws IOException {
+    public static ClassLoader createClassLoader(List<Repository> repositories, ClassLoader parent) throws Exception {
         if (log.isDebugEnabled()) {
             log.debug("Creating new class loader");
         }
@@ -43,11 +47,69 @@ public final class ClassLoaderFactory {
                         log.debug(" Including directory " + url);
                     }
                     set.add(url);
-                } else if (repository.getType() == )
+                } else if (repository.getType() == RepositoryType.JAR) {
+                    File file = new File(repository.getLocation());
+                    file = file.getCanonicalFile();
+                    if (!validateFile(file, RepositoryType.JAR)) {
+                        continue;
+                    }
+                    URL url = buildClassLoaderUrl(file);
+                    if (log.isDebugEnabled()) {
+                        log.debug(" Including jar file " + url);
+                    }
+                    set.add(url);
+                } else if (repository.getType() == RepositoryType.GLOB) {
+                    File directory = new File(repository.getLocation());
+                    directory = directory.getCanonicalFile();
+                    if (!validateFile(directory, RepositoryType.GLOB)) {
+                        continue;
+                    }
+                    if (log.isDebugEnabled()) {
+                        log.debug(" Including directory glob " + directory.getAbsolutePath());
+                    }
+                    String[] filenames = directory.list();
+
+                    if (filenames == null) {
+                        continue;
+                    }
+                    for (String s : filenames) {
+                        String filename = s.toLowerCase(Locale.ENGLISH);//TODO, here to local , what does it mean?
+                        if (!filename.endsWith(".jar")) {
+                            continue;
+                        }
+                        File file = new File(directory, s);
+                        file = file.getCanonicalFile();
+                        if (!validateFile(file, RepositoryType.JAR)) {
+                            continue;
+                        }
+                        if (log.isDebugEnabled()) {
+                            log.debug(" Including glob jar file " + file.getAbsolutePath());
+                        }
+                        URL url = buildClassLoaderUrl(file);
+                        set.add(url);
+                    }
+
+                }
             }
         }
 
-        return null;
+        final URL[] array = set.toArray(new URL[0]);
+        if (log.isDebugEnabled()) {
+            for (int i = 0; i < array.length; i++) {
+                log.debug(" location " + i + " is " + array[i]);
+
+            }
+        }
+
+        return AccessController.doPrivileged(
+                (PrivilegedAction<URLClassLoader>) () -> {
+                    if (parent == null) {
+                        return new URLClassLoader(array);
+                    } else {
+                        return new URLClassLoader(array, parent);
+                    }
+                } );
+
     }
 
     private static URL buildClassLoaderUrl(File file) throws MalformedURLException {
@@ -56,6 +118,7 @@ public final class ClassLoaderFactory {
         return new URL(fileUrlString);
     }
 
+    // why need to  validate TODO
     private static boolean validateFile(File file, RepositoryType type) throws IOException {
         if (RepositoryType.DIR == type || RepositoryType.GLOB == type) {
             if (!file.isDirectory()|| !file.canRead()) {

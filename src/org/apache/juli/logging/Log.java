@@ -8,4 +8,10 @@ public interface Log {
     void debug(Object message);
 
     void warn(String msg);
+
+    void info(Object string, Throwable t);
+
+    void info(Object message);
+
+    void warn(Object string, Throwable e);
 }
