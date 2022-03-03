@@ -180,6 +180,7 @@ public class Catalina {
         File serverXmlLocation = null;
         String xmlClassName = null;
 
+        //TODO
         if (generateCode || useGeneratedCode) {
             xmlClassName = start? generatedCodePackage + ".ServerXml" : generatedCodePackage + ".ServerXmlStop";
         }
