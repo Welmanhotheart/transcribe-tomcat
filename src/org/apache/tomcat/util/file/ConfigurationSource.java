@@ -1,12 +1,11 @@
 package org.apache.tomcat.util.file;
 
 import org.apache.tomcat.util.buf.UriUtil;
+import org.eclipse.text.edits.MalformedTreeException;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.net.URI;
+import java.net.URL;
 
 public interface ConfigurationSource {
     public static final ConfigurationSource DEFAULT = new ConfigurationSource() {
@@ -21,10 +20,21 @@ public interface ConfigurationSource {
                 }
                 if (f.isFile()) {
                     FileInputStream fis = new FileInputStream(f);
-                    new Resource(fis, f.toURI())
+                    return new Resource(fis, f.toURI());
                 }
             }
-            return null;
+            URI uri = null;
+            try {
+                uri = userDirUri.resolve(name);
+            } catch (IllegalArgumentException e) {
+                throw new FileNotFoundException(name);
+            }
+            try {
+                URL url = uri.toURL();
+                return new Resource(url.openConnection().getInputStream(),uri);
+            } catch (MalformedTreeException e) {
+                throw  new FileNotFoundException(name);
+            }
         }
     };
 
@@ -42,9 +52,11 @@ public interface ConfigurationSource {
 
     public class Resource implements AutoCloseable{
         private InputStream inputStream;
-
-        public Resource(FileInputStream fis, URI toURI) {
-
+        private final URI uri;
+        //TODO, why we need uri?
+        public Resource(InputStream fis, URI toURI) {
+            this.inputStream = fis;
+            this.uri = toURI;
         }
 
         @Override
@@ -57,7 +69,7 @@ public interface ConfigurationSource {
         }
 
         public URI getURI() {
-            return null;
+            return uri;
         }
     }
 }

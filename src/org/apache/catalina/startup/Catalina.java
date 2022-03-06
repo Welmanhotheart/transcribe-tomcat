@@ -1,6 +1,8 @@
 package org.apache.catalina.startup;
 
 import org.apache.catalina.Server;
+import org.apache.catalina.connector.Connector;
+import org.apache.catalina.core.StandardContext;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.util.digester.Digester;
@@ -12,6 +14,9 @@ import org.xml.sax.InputSource;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 
 
 public class Catalina {
@@ -254,7 +259,31 @@ public class Catalina {
         return null;
     }
 
+    /**
+     * create Digester for startup? TODO
+     * @return
+     */
     private Digester createStartDigester() {
+        Digester digester = new Digester();
+        digester.setValidating(false);
+        digester.setRulesValidation(true);
+        HashMap<Class<?>, List<String>> fakeAttributes = new HashMap<>();
+        List<String> objectAttrs = new ArrayList();
+        objectAttrs.add("className");
+        fakeAttributes.put(Object.class, objectAttrs);
+        List<String> contextAttrs = new ArrayList<>();
+        contextAttrs.add("source");
+        fakeAttributes.put(StandardContext.class, contextAttrs);
+        List<String> connectorAttrs = new ArrayList<>();
+        connectorAttrs.add("portOffset");
+        fakeAttributes.put(Connector.class, connectorAttrs);
+        digester.setFakeAttributes(fakeAttributes);
+        digester.setUseContextClassLoader(true);
+
+        digester.addObjectCreate("Server", "org.apache.catalina.core.StandardServer",
+                "className");
+        digester.addSetProperties("Server");
+        digester.addSetNext();
         return null;
     }
 
