@@ -1,19 +1,24 @@
 package org.apache.catalina.startup;
 
+import org.apache.catalina.Container;
 import org.apache.catalina.Server;
 import org.apache.catalina.connector.Connector;
 import org.apache.catalina.core.StandardContext;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.util.digester.Digester;
+import org.apache.tomcat.util.digester.Rule;
+import org.apache.tomcat.util.digester.RuleSet;
 import org.apache.tomcat.util.file.ConfigFileLoader;
 import org.apache.tomcat.util.file.ConfigurationSource;
 import org.apache.tomcat.util.res.StringManager;
+import org.xml.sax.Attributes;
 import org.xml.sax.InputSource;
 
 import java.io.File;
 import java.io.FileWriter;
 import java.io.InputStream;
+import java.lang.reflect.Constructor;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -283,8 +288,145 @@ public class Catalina {
         digester.addObjectCreate("Server", "org.apache.catalina.core.StandardServer",
                 "className");
         digester.addSetProperties("Server");
-        digester.addSetNext();
-        return null;
+        digester.addSetNext("Server",
+                "setServer",
+                "org.apache.catalina.Server");
+
+        digester.addObjectCreate("Server/GlobalNamingResources",
+                "org.apache.catalina.deploy.NamingResourcesImpl");
+        digester.addSetProperties("Server/GlobalNamingResources");
+        digester.addSetNext("Server/GlobalNamingResources",
+                "setGlobalNamingResources",
+                "org.apache.catalina.deploy.NamingResourcesImpl");
+
+        //TODO, here is what
+        digester.addRule("Server/Listener",
+                new ListenerCreateRule(null, "className"));
+        digester.addSetProperties("Server/Listener");
+        digester.addSetNext("Server/Listener",
+                "addLifecycleListener",
+                "org.apache.catalina.LifecycleListener");
+
+        digester.addObjectCreate("Server/Service",
+                "org.apache.catalina.core.StandardService",
+                "className");
+        digester.addSetProperties("Server/Service");
+        digester.addSetNext("Server/Service",
+                "addService",
+                "org.apache.catalina.Service");
+
+        // why here is null
+        digester.addObjectCreate("Server/Service/Listener",
+                null, // MUST be specified in the element
+                "className");
+        digester.addSetProperties("Server/Service/Listener");
+        digester.addSetNext("Server/Service/Listener",
+                "addLifecycleListener",
+                "org.apache.catalina.LifecycleListener");
+
+        //Executor
+        digester.addObjectCreate("Server/Service/Executor",
+                "org.apache.catalina.core.StandardThreadExecutor",
+                "className");
+        digester.addSetProperties("Server/Service/Executor");
+
+        digester.addSetNext("Server/Service/Executor",
+                "addExecutor",
+                "org.apache.catalina.Executor");
+
+        digester.addRule("Server/Service/Connector",
+                new ConnectorCreateRule());
+        digester.addSetProperties("Server/Service/Connector",
+                new String[]{"executor", "sslImplementationName", "protocol"});
+        digester.addSetNext("Server/Service/Connector",
+                "addConnector",
+                "org.apache.catalina.connector.Connector");
+
+        digester.addRule("Server/Service/Connector", new AddPortOffsetRule());
+
+        digester.addObjectCreate("Server/Service/Connector/SSLHostConfig",
+                "org.apache.tomcat.util.net.SSLHostConfig");
+        digester.addSetProperties("Server/Service/Connector/SSLHostConfig");
+        digester.addSetNext("Server/Service/Connector/SSLHostConfig",
+                "addSslHostConfig",
+                "org.apache.tomcat.util.net.SSLHostConfig");
+
+        digester.addRule("Server/Service/Connector/SSLHostConfig/Certificate",
+                new CertificateCreateRule());
+        digester.addSetProperties("Server/Service/Connector/SSLHostConfig/Certificate", new String[]{"type"});
+        digester.addSetNext("Server/Service/Connector/SSLHostConfig/Certificate",
+                "addCertificate",
+                "org.apache.tomcat.util.net.SSLHostConfigCertificate");
+
+        digester.addObjectCreate("Server/Service/Connector/SSLHostConfig/OpenSSLConf",
+                "org.apache.tomcat.util.net.openssl.OpenSSLConf");
+        digester.addSetProperties("Server/Service/Connector/SSLHostConfig/OpenSSLConf");
+        digester.addSetNext("Server/Service/Connector/SSLHostConfig/OpenSSLConf",
+                "setOpenSslConf",
+                "org.apache.tomcat.util.net.openssl.OpenSSLConf");
+
+        digester.addObjectCreate("Server/Service/Connector/SSLHostConfig/OpenSSLConf/OpenSSLConfCmd",
+                "org.apache.tomcat.util.net.openssl.OpenSSLConfCmd");
+        digester.addSetProperties("Server/Service/Connector/SSLHostConfig/OpenSSLConf/OpenSSLConfCmd");
+        digester.addSetNext("Server/Service/Connector/SSLHostConfig/OpenSSLConf/OpenSSLConfCmd",
+                "addCmd",
+                "org.apache.tomcat.util.net.openssl.OpenSSLConfCmd");
+
+        digester.addObjectCreate("Server/Service/Connector/Listener",
+                null, // MUST be specified in the element
+                "className");
+        digester.addSetProperties("Server/Service/Connector/Listener");
+        digester.addSetNext("Server/Service/Connector/Listener",
+                "addLifecycleListener",
+                "org.apache.catalina.LifecycleListener");
+
+        digester.addObjectCreate("Server/Service/Connector/UpgradeProtocol",
+                null, // MUST be specified in the element
+                "className");
+        digester.addSetProperties("Server/Service/Connector/UpgradeProtocol");
+        digester.addSetNext("Server/Service/Connector/UpgradeProtocol",
+                "addUpgradeProtocol",
+                "org.apache.coyote.UpgradeProtocol");
+
+        // Add RuleSets for nested elements
+        digester.addRuleSet(new NamingRuleSet("Server/GlobalNamingResources/"));
+        digester.addRuleSet(new EngineRuleSet("Server/Service/"));
+        digester.addRuleSet(new HostRuleSet("Server/Service/Engine/"));
+        digester.addRuleSet(new ContextRuleSet("Server/Service/Engine/Host/"));
+        addClusterRuleSet(digester, "Server/Service/Engine/Host/Cluster/");
+        digester.addRuleSet(new NamingRuleSet("Server/Service/Engine/Host/Context/"));
+
+        // When the 'engine' is found, set the parentClassLoader.
+        digester.addRule("Server/Service/Engine",
+                new SetParentClassLoaderRule(parentClassLoader));
+        addClusterRuleSet(digester, "Server/Service/Engine/Cluster/");
+
+
+        return digester;
+    }
+
+
+    /**
+     * TODO what does here mean?
+     * Cluster support is optional. The JARs may have been removed.
+     */
+    private void addClusterRuleSet(Digester digester, String prefix) {
+        Class<?> clazz = null;
+        Constructor<?> constructor = null;
+        try {
+            clazz = Class.forName("org.apache.catalina.ha.ClusterRuleSet");
+            constructor = clazz.getConstructor(String.class);
+            RuleSet ruleSet = (RuleSet) constructor.newInstance(prefix);
+            digester.addRuleSet(ruleSet);
+        } catch (Exception e) {
+            if (log.isDebugEnabled()) {
+                log.debug(sm.getString("catalina.noCluster",
+                        e.getClass().getName() + ": " +  e.getMessage()), e);
+            } else if (log.isInfoEnabled()) {
+                log.info(sm.getString("catalina.noCluster",
+                        e.getClass().getName() + ": " +  e.getMessage()));
+            }
+        }
     }
 
     private File configFile() {
@@ -305,5 +447,40 @@ public class Catalina {
 
     private interface ServerXml {
         void load(Catalina catalina);
+    }
+
+
+    /**
+     * what does this mean? ParentClassLoader?
+     */
+    final class SetParentClassLoaderRule extends Rule {
+
+        public SetParentClassLoaderRule(ClassLoader parentClassLoader) {
+
+            this.parentClassLoader = parentClassLoader;
+
+        }
+
+        ClassLoader parentClassLoader = null;
+
+        @Override
+        public void begin(String namespace, String name, Attributes attributes)
+                throws Exception {
+
+            if (digester.getLogger().isDebugEnabled()) {
+                digester.getLogger().debug("Setting parent class loader");
+            }
+
+            Container top = (Container) digester.peek();
+            top.setParentClassLoader(parentClassLoader);
+
+            StringBuilder code = digester.getGeneratedCode();
+            if (code != null) {
+                code.append(digester.toVariableName(top)).append(".setParentClassLoader(");
+                code.append(digester.toVariableName(Catalina.this)).append(".getParentClassLoader());");
+                code.append(System.lineSeparator());
+            }
+        }
+
     }
 }

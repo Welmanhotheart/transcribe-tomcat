@@ -7,7 +7,9 @@ import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 
-
+/**
+ * What does StringManager mean?
+ */
 public class StringManager {
 
     private static final int LOCALE_CACHE_SIZE = 10;
@@ -20,7 +22,9 @@ public class StringManager {
     public StringManager(String packageName, Locale locale) {
 
     }
-
+    public static final StringManager getManager(Class<?> clazz) {
+        return getManager(clazz.getPackage().getName());
+    }
     public static final StringManager getManager(String packageName) {
 
         return getManager(packageName, Locale.getDefault());

@@ -7,6 +7,9 @@ public interface Log {
 
     void debug(Object message);
 
+    public void debug(Object message, Throwable t);
+
+
     void warn(String msg);
 
     void info(Object string, Throwable t);
@@ -14,4 +17,6 @@ public interface Log {
     void info(Object message);
 
     void warn(Object string, Throwable e);
+
+    boolean isInfoEnabled();
 }

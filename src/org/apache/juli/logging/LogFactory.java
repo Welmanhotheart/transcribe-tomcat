@@ -1,12 +1,8 @@
 package org.apache.juli.logging;
 
 import aQute.bnd.annotation.spi.ServiceConsumer;
-import org.apache.catalina.startup.BootStrap;
-import org.eclipse.jdt.core.ITypeRoot;
 
 import java.lang.reflect.Constructor;
-import java.lang.reflect.InvocationTargetException;
-import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
 import java.util.ServiceLoader;
 
@@ -32,6 +28,11 @@ public class LogFactory {
             }
         }
         discoveredLogConstructor = m;
+    }
+
+    public static Log getLog(String name)
+            throws LogConfigurationException {
+        return getFactory().getInstance(name);
     }
 
     public static Log getLog(Class<?> clazz) {

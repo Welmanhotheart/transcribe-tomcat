@@ -29,6 +29,11 @@ public class DirectJDKLog implements Log{
     }
 
     @Override
+    public void debug(Object message, Throwable t) {
+
+    }
+
+    @Override
     public void warn(String msg) {
 
     }
@@ -46,5 +51,10 @@ public class DirectJDKLog implements Log{
     @Override
     public void warn(Object string, Throwable e) {
 
+    }
+
+    @Override
+    public boolean isInfoEnabled() {
+        return false;
     }
 }

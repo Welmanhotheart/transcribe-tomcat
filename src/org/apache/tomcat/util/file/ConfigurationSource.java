@@ -1,9 +1,9 @@
 package org.apache.tomcat.util.file;
 
 import org.apache.tomcat.util.buf.UriUtil;
-import org.eclipse.text.edits.MalformedTreeException;
 
 import java.io.*;
+import java.net.MalformedURLException;
 import java.net.URI;
 import java.net.URL;
 
@@ -32,7 +32,7 @@ public interface ConfigurationSource {
             try {
                 URL url = uri.toURL();
                 return new Resource(url.openConnection().getInputStream(),uri);
-            } catch (MalformedTreeException e) {
+            } catch (MalformedURLException e) {
                 throw  new FileNotFoundException(name);
             }
         }
