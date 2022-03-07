@@ -4,6 +4,7 @@ import org.apache.catalina.startup.Catalina;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.util.IntrospectionUtils;
+import org.apache.tomcat.util.IntrospectionUtils.PropertySource;
 import org.apache.tomcat.util.res.StringManager;
 import org.xml.sax.EntityResolver;
 import org.xml.sax.InputSource;
@@ -42,6 +43,10 @@ public class Digester extends DefaultHandler2 {
      */
     protected boolean configured = false;
 
+    /**
+     * The XMLReader used to parse digester rules.
+     */
+    protected XMLReader reader = null;
 
     public static boolean isGeneratedCodeLoaderSet() {
         return false;
