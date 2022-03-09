@@ -6,13 +6,13 @@ import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.util.IntrospectionUtils;
 import org.apache.tomcat.util.IntrospectionUtils.PropertySource;
 import org.apache.tomcat.util.res.StringManager;
-import org.xml.sax.EntityResolver;
-import org.xml.sax.InputSource;
-import org.xml.sax.SAXException;
-import org.xml.sax.XMLReader;
+import org.xml.sax.*;
 import org.xml.sax.ext.DefaultHandler2;
 import org.xml.sax.ext.EntityResolver2;
 
+import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.parsers.SAXParser;
+import javax.xml.parsers.SAXParserFactory;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.EmptyStackException;
@@ -47,6 +47,23 @@ public class Digester extends DefaultHandler2 {
      * The XMLReader used to parse digester rules.
      */
     protected XMLReader reader = null;
+
+
+    /**
+     * The SAXParserFactory that is created the first time we need it.
+     */
+    protected SAXParserFactory factory = null;
+
+
+    /**
+     * Do we want a "namespace aware" parser.
+     */
+    protected boolean namespaceAware = false;
+
+    /**
+     * TODO what is validating here TODO
+     */
+    private boolean validating;
 
     public static boolean isGeneratedCodeLoaderSet() {
         return false;
@@ -142,6 +159,44 @@ public class Digester extends DefaultHandler2 {
 
         reader.setErrorHandler(this);
         return reader;
+    }
+
+    private SAXParser getParser() {
+        // Return the parser we already created (if any)
+        if (parser != null) {
+            return parser;
+        }
+        try {
+            parser = getFactory().newSAXParser();
+        } catch (Exception e) {
+            log.error(sm.getString("digester.createParserError"), e);
+            return null;
+        }
+
+        return parser;
+    }
+
+    private SAXParserFactory getFactory() throws SAXNotSupportedException, SAXNotRecognizedException, ParserConfigurationException {
+        if (factory == null) {
+            factory = SAXParserFactory.newInstance();
+
+            //TODO here what is namespaceAware TODO
+            factory.setNamespaceAware(namespaceAware);
+            // Preserve xmlns attributes
+            if (namespaceAware) {
+                factory.setFeature("http://xml.org/sax/features/namespace-prefixes", true);
+            }
+
+            factory.setValidating(validating);
+            if (validating) {
+                // Enable DTD validation
+                factory.setFeature("http://xml.org/sax/features/validation", true);
+                // Enable schema validation
+                factory.setFeature("http://apache.org/xml/features/validation/schema", true);
+            }
+        }
+        return factory;
+        return null;
     }
 
     public void setUseContextClassLoader(boolean b) {
