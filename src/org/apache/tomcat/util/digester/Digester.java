@@ -39,7 +39,7 @@ public class Digester extends DefaultHandler2 {
     protected Log saxLog = LogFactory.getLog("org.apache.tomcat.util.digester.Digester.sax");
 
     /**
-     * Has this Digester been configured yet.
+     * Has this Digester been configured yet.TODO
      */
     protected boolean configured = false;
 
@@ -56,7 +56,7 @@ public class Digester extends DefaultHandler2 {
 
 
     /**
-     * Do we want a "namespace aware" parser.
+     * Do we want a "namespace aware" parser.TODO
      */
     protected boolean namespaceAware = false;
 
@@ -64,6 +64,11 @@ public class Digester extends DefaultHandler2 {
      * TODO what is validating here TODO
      */
     private boolean validating;
+
+    protected EntityResolver entityResolver;
+    protected PropertySource[] source;
+    protected ClassLoader classLoader;
+    protected SAXParser parser;
 
     public static boolean isGeneratedCodeLoaderSet() {
         return false;
@@ -94,12 +99,16 @@ public class Digester extends DefaultHandler2 {
 
     }
 
-    public Object parse(InputSource inputSource) {
+    public Object parse(InputSource inputSource) throws SAXException, IOException {
         configure();
+        // here read do the parsing process
         getXMLReader().parse(inputSource);
         return root;
     }
 
+    /**
+     * what does this method mean here? TODO
+     */
     private void configure() {
         // Do not configure more than once
         if (configured) {
@@ -137,8 +146,9 @@ public class Digester extends DefaultHandler2 {
         if (reader == null) {
             reader = getParser().getXMLReader();
         }
-
+        // what is dtdHandler here what is dtd TODO
         reader.setDTDHandler(this);
+        //what id content handler here , TODO
         reader.setContentHandler(this);
 
         EntityResolver entityResolver = getEntityResolver();
@@ -155,10 +165,29 @@ public class Digester extends DefaultHandler2 {
 
         reader.setEntityResolver(entityResolver);
 
+        //what does this code mean here ?
         reader.setProperty("http://xml.org/sax/properties/lexical-handler", this);
 
         reader.setErrorHandler(this);
         return reader;
+    }
+
+    /**
+     * Set the <code>EntityResolver</code> used by SAX when resolving
+     * public id and system id.
+     * This must be called before the first call to <code>parse()</code>.
+     * @param entityResolver a class that implement the <code>EntityResolver</code> interface.
+     */
+    public void setEntityResolver(EntityResolver entityResolver) {
+        this.entityResolver = entityResolver;
+    }
+
+    /**
+     * here is public , doubt TODO
+     * @return
+     */
+    public EntityResolver getEntityResolver() {
+        return entityResolver;
     }
 
     private SAXParser getParser() {
@@ -196,7 +225,6 @@ public class Digester extends DefaultHandler2 {
             }
         }
         return factory;
-        return null;
     }
 
     public void setUseContextClassLoader(boolean b) {
@@ -204,7 +232,7 @@ public class Digester extends DefaultHandler2 {
     }
 
     public void addObjectCreate(String patter, String className, String attributeName) {
-
+        addRule(patter, new ObjectCreateRule(className, attributeName));
     }
 
     public void addObjectCreate(String pattern, String className) {
@@ -236,12 +264,12 @@ public class Digester extends DefaultHandler2 {
         return this.rules;
     }
 
-    public void addSetNext(String pattern, String methodName, String paramType) {
-        addRule(pattern, new SetNextRule(methodName, paramType));
-    }
-
     public void addRuleSet(RuleSet ruleSet) {
         ruleSet.addRuleInstances(this);
+    }
+
+    public void addSetNext(String pattern, String methodName, String paramType) {
+        addRule(pattern, new SetNextRule(methodName, paramType));
     }
 
     /**
