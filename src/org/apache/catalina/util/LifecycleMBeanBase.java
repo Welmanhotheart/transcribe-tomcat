@@ -1,4 +1,6 @@
 package org.apache.catalina.util;
 
-public class LifecycleMBeanBase {
+import org.apache.catalina.JmxEnabled;
+
+public class LifecycleMBeanBase extends LifecycleBase  implements JmxEnabled {
 }

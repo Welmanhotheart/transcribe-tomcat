@@ -24,6 +24,13 @@ public class Rule {
         // NO-OP by default.
     }
 
+    public void body(String namespace, String name, String text) throws Exception {
+        // NO-OP by default.
+    }
+
+    public void end(String namespace, String name) throws Exception {
+        // NO-OP by default.
+    }
     public String getNamespaceURI() {
         return namespaceURI;
     }

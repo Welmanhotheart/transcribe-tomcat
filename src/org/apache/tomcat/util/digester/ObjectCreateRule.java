@@ -54,7 +54,16 @@ public class ObjectCreateRule extends Rule{
         }
     }
 
+    @Override
+    public void end(String namespace, String name) throws Exception {
 
+        Object top = digester.pop();
+        if (digester.log.isDebugEnabled()) {
+            digester.log.debug("[ObjectCreateRule]{" + digester.match +
+                    "} Pop " + top.getClass().getName());
+        }
+
+    }
 
     /**
      * Return the actual class name of the class to be instantiated.

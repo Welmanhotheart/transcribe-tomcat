@@ -329,6 +329,65 @@ public class IntrospectionUtils {
         public String getProperty(String key, ClassLoader classLoader);
     }
 
+    @SuppressWarnings("null") // params cannot be null when comparing lengths
+    public static Method findMethod(Class<?> c, String name,
+                                    Class<?> params[]) {
+        Method methods[] = findMethods(c);
+        for (Method method : methods) {
+            if (method.getName().equals(name)) {
+                Class<?> methodParams[] = method.getParameterTypes();
+                if (params == null && methodParams.length == 0) {
+                    return method;
+                }
+                if (params.length != methodParams.length) {
+                    continue;
+                }
+                boolean found = true;
+                for (int j = 0; j < params.length; j++) {
+                    if (params[j] != methodParams[j]) {
+                        found = false;
+                        break;
+                    }
+                }
+                if (found) {
+                    return method;
+                }
+            }
+        }
+        return null;
+    }
+
+    public static Object callMethod1(Object target, String methodN,
+                                     Object param1, String typeParam1, ClassLoader cl) throws Exception {
+        if (target == null || methodN == null || param1 == null) {
+            throw new IllegalArgumentException(sm.getString("introspectionUtils.nullParameter"));
+        }
+        if (log.isDebugEnabled()) {
+            log.debug("IntrospectionUtils: callMethod1 " +
+                    target.getClass().getName() + " " +
+                    param1.getClass().getName() + " " + typeParam1);
+        }
+
+        Class<?> params[] = new Class[1];
+        if (typeParam1 == null) {
+            params[0] = param1.getClass();
+        } else {
+            params[0] = cl.loadClass(typeParam1);
+        }
+        Method m = findMethod(target.getClass(), methodN, params);
+        if (m == null) {
+            throw new NoSuchMethodException(target.getClass().getName() + " "
+                    + methodN);
+        }
+        try {
+            return m.invoke(target, new Object[] { param1 });
+        } catch (InvocationTargetException ie) {
+            ExceptionUtils.handleThrowable(ie.getCause());
+            throw ie;
+        }
+    }
+
+
     /**
      * why it is here TODO
      */

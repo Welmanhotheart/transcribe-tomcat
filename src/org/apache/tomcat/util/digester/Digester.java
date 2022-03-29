@@ -21,6 +21,12 @@ import java.util.*;
 public class Digester extends DefaultHandler2 {
     protected static final StringManager sm = StringManager.getManager(Digester.class);
     private static GeneratedCodeLoader generatedCodeLoader;
+    /**
+     * The Log to which most logging calls will be made.
+     */
+    protected Log log = LogFactory.getLog(Digester.class);
+
+
     protected ArrayStack<Object> stack = new ArrayStack<>();
     /**
      * The Locator associated with our parser.
@@ -34,8 +40,6 @@ public class Digester extends DefaultHandler2 {
      */
     protected StringBuilder code = null;
     protected ArrayList<Object> known = new ArrayList<>();
-
-    protected Log log = LogFactory.getLog(Digester.class);
 
     /**
      * The current match pattern for nested element processing.
@@ -188,7 +192,14 @@ public class Digester extends DefaultHandler2 {
 
     }
 
-    public void setFakeAttributes(HashMap<Class<?>, List<String>> fakeAttributes) {
+    /**
+     * Set the fake attributes.
+     *
+     * @param fakeAttributes The new fake attributes.
+     */
+    public void setFakeAttributes(Map<Class<?>, List<String>> fakeAttributes) {
+
+        this.fakeAttributes = fakeAttributes;
 
     }
 
@@ -345,6 +356,14 @@ public class Digester extends DefaultHandler2 {
         }
     }
 
+    public Object peek(int n) {
+        try {
+            return stack.peek(n);
+        } catch (EmptyStackException e) {
+            log.warn(sm.getString("digester.emptyStack"));
+            return null;
+        }
+    }
 
     /**
      * what here generate code
@@ -530,7 +549,7 @@ public class Digester extends DefaultHandler2 {
 
         // Fire "begin" events for all relevant rules
         List<Rule> rules = getRules().match(namespaceURI, match);
-        matches.push(rules);
+        matches.push(rules);//why here it needs to push the rules TODO
         if ((rules != null) && (rules.size() > 0)) {
             for (Rule value : rules) {
                 try {
@@ -555,6 +574,107 @@ public class Digester extends DefaultHandler2 {
 
     }
 
+    /**
+     * Process notification of the end of an XML element being reached.
+     *
+     * @param namespaceURI - The Namespace URI, or the empty string if the
+     *   element has no Namespace URI or if Namespace processing is not
+     *   being performed.
+     * @param localName - The local name (without prefix), or the empty
+     *   string if Namespace processing is not being performed.
+     * @param qName - The qualified XML 1.0 name (with prefix), or the
+     *   empty string if qualified names are not available.
+     * @exception SAXException if a parsing error is to be reported
+     */
+    @Override
+    public void endElement(String namespaceURI, String localName, String qName)
+            throws SAXException {
+
+        boolean debug = log.isDebugEnabled();
+
+        if (debug) {
+            if (saxLog.isDebugEnabled()) {
+                saxLog.debug("endElement(" + namespaceURI + "," + localName + "," + qName + ")");
+            }
+            log.debug("  match='" + match + "'");
+            log.debug("  bodyText='" + bodyText + "'");
+        }
+
+        // Parse system properties
+        bodyText = updateBodyText(bodyText);
+
+        // the actual element name is either in localName or qName, depending
+        // on whether the parser is namespace aware
+        String name = localName;
+        if ((name == null) || (name.length() < 1)) {
+            name = qName;
+        }
+
+        // Fire "body" events for all relevant rules
+        List<Rule> rules = matches.pop();
+        if ((rules != null) && (rules.size() > 0)) {
+            String bodyText = this.bodyText.toString().intern();
+            for (Rule value : rules) {
+                try {
+                    Rule rule = value;
+                    if (debug) {
+                        log.debug("  Fire body() for " + rule);
+                    }
+                    rule.body(namespaceURI, name, bodyText);
+                } catch (Exception e) {
+                    log.error(sm.getString("digester.error.body"), e);
+                    throw createSAXException(e);
+                } catch (Error e) {
+                    log.error(sm.getString("digester.error.body"), e);
+                    throw e;
+                }
+            }
+        } else {
+            if (debug) {
+                log.debug(sm.getString("digester.noRulesFound", match));
+            }
+            if (rulesValidation) {
+                log.warn(sm.getString("digester.noRulesFound", match));
+            }
+        }
+
+        // Recover the body text from the surrounding element
+        bodyText = bodyTexts.pop();
+
+        // Fire "end" events for all relevant rules in reverse order
+        if (rules != null) {
+            for (int i = 0; i < rules.size(); i++) {
+                int j = (rules.size() - i) - 1;
+                try {
+                    Rule rule = rules.get(j);
+                    if (debug) {
+                        log.debug("  Fire end() for " + rule);
+                    }
+                    rule.end(namespaceURI, name);
+                } catch (Exception e) {
+                    log.error(sm.getString("digester.error.end"), e);
+                    throw createSAXException(e);
+                } catch (Error e) {
+                    log.error(sm.getString("digester.error.end"), e);
+                    throw e;
+                }
+            }
+        }
+
+        // Recover the previous match expression
+        int slash = match.lastIndexOf('/');
+        if (slash >= 0) {
+            match = match.substring(0, slash);
+        } else {
+            match = "";
+        }
+
+    }
+
+
+
+
+
 
     private Attributes updateAttributes(Attributes list) {
 
@@ -574,6 +694,30 @@ public class Digester extends DefaultHandler2 {
         }
 
         return newAttrs;
+    }
+
+
+    /**
+     * Return a new StringBuilder containing the same contents as the
+     * input buffer, except that data of form ${varname} have been
+     * replaced by the value of that var as defined in the system property.
+     */
+    private StringBuilder updateBodyText(StringBuilder bodyText) {
+        String in = bodyText.toString();
+        String out;
+        try {
+            out = IntrospectionUtils.replaceProperties(in, null, source, getClassLoader());
+        } catch (Exception e) {
+            return bodyText; // return unchanged data
+        }
+
+        if (out == in) {
+            // No substitutions required. Don't waste memory creating
+            // a new buffer
+            return bodyText;
+        } else {
+            return new StringBuilder(out);
+        }
     }
 
 
@@ -609,6 +753,21 @@ public class Digester extends DefaultHandler2 {
             return false;
         } else {
             return result.contains(name);
+        }
+    }
+
+
+    /**
+     * Pop the top object off of the stack, and return it.  If there are
+     * no objects on the stack, return <code>null</code>.
+     * @return the top object
+     */
+    public Object pop() {
+        try {
+            return stack.pop();
+        } catch (EmptyStackException e) {
+            log.warn(sm.getString("digester.emptyStack"));
+            return null;
         }
     }
 
