@@ -9,20 +9,24 @@ import org.apache.tomcat.util.res.StringManager;
 import org.xml.sax.*;
 import org.xml.sax.ext.DefaultHandler2;
 import org.xml.sax.ext.EntityResolver2;
+import org.xml.sax.helpers.AttributesImpl;
 
 import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.EmptyStackException;
-import java.util.HashMap;
-import java.util.List;
+import java.lang.reflect.InvocationTargetException;
+import java.util.*;
 
 public class Digester extends DefaultHandler2 {
     protected static final StringManager sm = StringManager.getManager(Digester.class);
     private static GeneratedCodeLoader generatedCodeLoader;
     protected ArrayStack<Object> stack = new ArrayStack<>();
+    /**
+     * The Locator associated with our parser.
+     */
+    protected Locator locator = null;
+
     private Object root = null;
     private Rules rules;
     /**
@@ -32,6 +36,14 @@ public class Digester extends DefaultHandler2 {
     protected ArrayList<Object> known = new ArrayList<>();
 
     protected Log log = LogFactory.getLog(Digester.class);
+
+    /**
+     * The current match pattern for nested element processing.
+     */
+    protected String match = "";
+
+    protected ArrayStack<List<Rule>> matches = new ArrayStack<>(10);
+
 
     /**
      * The Log to which all SAX event related logging calls will be made.
@@ -61,14 +73,45 @@ public class Digester extends DefaultHandler2 {
     protected boolean namespaceAware = false;
 
     /**
+     * The body text of the current element.
+     */
+    protected StringBuilder bodyText = new StringBuilder();
+
+
+    /**
+     * The stack of body text string buffers for surrounding elements.
+     */
+    protected ArrayStack<StringBuilder> bodyTexts = new ArrayStack<>();
+
+    /**
      * TODO what is validating here TODO
      */
     private boolean validating;
+
+    /**
+     * Warn on missing attributes and elements.
+     */
+    protected boolean rulesValidation = false;
+
+
+
+    /**
+     * Do we want to use the Context ClassLoader when loading classes
+     * for instantiating new objects.  Default is <code>false</code>.
+     */
+    protected boolean useContextClassLoader = false;
+
 
     protected EntityResolver entityResolver;
     protected PropertySource[] source;
     protected ClassLoader classLoader;
     protected SAXParser parser;
+
+    /**
+     * Fake attributes map (attributes are often used for object creation).
+     */
+    protected Map<Class<?>, List<String>> fakeAttributes = null;
+
 
     public static boolean isGeneratedCodeLoaderSet() {
         return false;
@@ -128,6 +171,13 @@ public class Digester extends DefaultHandler2 {
      */
     public void setValidating(boolean b) {
 
+    }
+
+    /**
+     * @return the rules validation flag.
+     */
+    public boolean getRulesValidation() {
+        return this.rulesValidation;
     }
 
     /**
@@ -384,6 +434,181 @@ public class Digester extends DefaultHandler2 {
             baseURI = replace(baseURI);
             systemId = replace(systemId);
             return entityResolver2.resolveEntity(name, publicId, baseURI, systemId);
+        }
+    }
+
+    public SAXException createSAXException(Exception e) {
+        if (e instanceof InvocationTargetException) {
+            Throwable t = e.getCause();
+            if (t instanceof ThreadDeath) {
+                throw (ThreadDeath) t;
+            }
+            if (t instanceof VirtualMachineError) {
+                throw (VirtualMachineError) t;
+            }
+            if (t instanceof Exception) {
+                e = (Exception) t;
+            }
+        }
+        return createSAXException(e.getMessage(), e);
+    }
+
+    public SAXException createSAXException(String message, Exception e) {
+        if ((e != null) && (e instanceof InvocationTargetException)) {
+            Throwable t = e.getCause();
+            if (t instanceof ThreadDeath) {
+                throw (ThreadDeath) t;
+            }
+            if (t instanceof VirtualMachineError) {
+                throw (VirtualMachineError) t;
+            }
+            if (t instanceof Exception) {
+                e = (Exception) t;
+            }
+        }
+        if (locator != null) {
+            String error = sm.getString("digester.errorLocation",
+                    Integer.valueOf(locator.getLineNumber()),
+                    Integer.valueOf(locator.getColumnNumber()), message);
+            if (e != null) {
+                return new SAXParseException(error, locator, e);
+            } else {
+                return new SAXParseException(error, locator);
+            }
+        }
+        log.error(sm.getString("digester.noLocator"));
+        if (e != null) {
+            return new SAXException(message, e);
+        } else {
+            return new SAXException(message);
+        }
+    }
+
+    /**
+     * Create a SAX exception which also understands about the location in
+     * the digester file where the exception occurs
+     * @param message The error message
+     * @return the new exception
+     */
+    public SAXException createSAXException(String message) {
+        return createSAXException(message, null);
+    }
+
+    @Override
+    public void startElement(String namespaceURI, String localName, String qName, Attributes list)
+            throws SAXException {
+        boolean debug = log.isDebugEnabled();
+
+        if (saxLog.isDebugEnabled()) {
+            saxLog.debug("startElement(" + namespaceURI + "," + localName + "," + qName + ")");
+        }
+
+        // Parse system properties
+        list = updateAttributes(list);
+
+        // Save the body text accumulated for our surrounding element
+        bodyTexts.push(bodyText);
+        bodyText = new StringBuilder();
+
+        // the actual element name is either in localName or qName, depending
+        // on whether the parser is namespace aware
+        String name = localName;
+        if ((name == null) || (name.length() < 1)) {
+            name = qName;
+        }
+
+        // Compute the current matching rule
+        StringBuilder sb = new StringBuilder(match);
+        if (match.length() > 0) {
+            sb.append('/');
+        }
+        sb.append(name);
+        match = sb.toString();
+        if (debug) {
+            log.debug("  New match='" + match + "'");
+        }
+
+        // Fire "begin" events for all relevant rules
+        List<Rule> rules = getRules().match(namespaceURI, match);
+        matches.push(rules);
+        if ((rules != null) && (rules.size() > 0)) {
+            for (Rule value : rules) {
+                try {
+                    Rule rule = value;
+                    if (debug) {
+                        log.debug("  Fire begin() for " + rule);
+                    }
+                    rule.begin(namespaceURI, name, list);
+                } catch (Exception e) {
+                    log.error(sm.getString("digester.error.begin"), e);
+                    throw createSAXException(e);
+                } catch (Error e) {
+                    log.error(sm.getString("digester.error.begin"), e);
+                    throw e;
+                }
+            }
+        } else {
+            if (debug) {
+                log.debug(sm.getString("digester.noRulesFound", match));
+            }
+        }
+
+    }
+
+
+    private Attributes updateAttributes(Attributes list) {
+
+        if (list.getLength() == 0) {
+            return list;
+        }
+
+        AttributesImpl newAttrs = new AttributesImpl(list);
+        int nAttributes = newAttrs.getLength();
+        for (int i = 0; i < nAttributes; ++i) {
+            String value = newAttrs.getValue(i);
+            try {
+                newAttrs.setValue(i, IntrospectionUtils.replaceProperties(value, null, source, getClassLoader()).intern());
+            } catch (Exception e) {
+                log.warn(sm.getString("digester.failedToUpdateAttributes", newAttrs.getLocalName(i), value), e);
+            }
+        }
+
+        return newAttrs;
+    }
+
+
+    public ClassLoader getClassLoader() {
+        if (this.classLoader != null) {
+            return this.classLoader;
+        }
+        if (this.useContextClassLoader) {
+            ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+            if (classLoader != null) {
+                return classLoader;
+            }
+        }
+        return this.getClass().getClassLoader();
+    }
+
+
+    /**
+     * Determine if an attribute is a fake attribute.
+     * @param object The object
+     * @param name The attribute name
+     * @return <code>true</code> if this is a fake attribute
+     */
+    public boolean isFakeAttribute(Object object, String name) {
+        if (fakeAttributes == null) {
+            return false;
+        }
+        List<String> result = fakeAttributes.get(object.getClass());
+        if (result == null) {
+            result = fakeAttributes.get(Object.class);
+        }
+        if (result == null) {
+            return false;
+        } else {
+            return result.contains(name);
         }
     }
 

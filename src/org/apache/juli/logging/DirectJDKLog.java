@@ -34,6 +34,11 @@ public class DirectJDKLog implements Log{
     }
 
     @Override
+    public void error(Object message) {
+
+    }
+
+    @Override
     public void warn(String msg) {
 
     }

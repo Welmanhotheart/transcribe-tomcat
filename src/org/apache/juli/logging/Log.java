@@ -9,6 +9,13 @@ public interface Log {
 
     public void debug(Object message, Throwable t);
 
+    /**
+     * <p> Log a message with error log level. </p>
+     *
+     * @param message log this message
+     */
+    public void error(Object message);
+
 
     void warn(String msg);
 

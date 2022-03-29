@@ -37,4 +37,52 @@ public class RulesBase implements Rules{
             item.setDigester(digester);
         }
     }
+
+    @Override
+    public List<Rule> match(String namespaceURI, String pattern) {
+        // List rulesList = (List) this.cache.get(pattern);
+        List<Rule> rulesList = lookup(namespaceURI, pattern);
+        if ((rulesList == null) || (rulesList.size() < 1)) {
+            // Find the longest key, ie more discriminant
+            String longKey = "";
+            for (String key : this.cache.keySet()) {
+                if (key.startsWith("*/")) {
+                    if (pattern.equals(key.substring(2)) ||
+                            pattern.endsWith(key.substring(1))) {
+                        if (key.length() > longKey.length()) {
+                            // rulesList = (List) this.cache.get(key);
+                            rulesList = lookup(namespaceURI, key);
+                            longKey = key;
+                        }
+                    }
+                }
+            }
+        }
+        if (rulesList == null) {
+            rulesList = new ArrayList<>();
+        }
+        return rulesList;
+    }
+
+    protected List<Rule> lookup(String namespaceURI, String pattern) {
+        // Optimize when no namespace URI is specified
+        List<Rule> list = this.cache.get(pattern);
+        if (list == null) {
+            return null;
+        }
+        if ((namespaceURI == null) || (namespaceURI.length() == 0)) {
+            return list;
+        }
+
+        // Select only Rules that match on the specified namespace URI
+        List<Rule> results = new ArrayList<>();
+        for (Rule item : list) {
+            if ((namespaceURI.equals(item.getNamespaceURI())) ||
+                    (item.getNamespaceURI() == null)) {
+                results.add(item);
+            }
+        }
+        return results;
+    }
+
 }

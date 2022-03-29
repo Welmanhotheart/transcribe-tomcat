@@ -1,6 +1,13 @@
 package org.apache.tomcat.util.digester;
 
+import org.apache.tomcat.util.res.StringManager;
+import org.xml.sax.Attributes;
+
 public class ObjectCreateRule extends Rule{
+
+    protected static final StringManager sm = StringManager.getManager(Rule.class);
+
+
     protected String attributeName;
     protected String className;
 
@@ -22,5 +29,50 @@ public class ObjectCreateRule extends Rule{
         this.attributeName = attributeName;
 
     }
+
+    @Override
+    public void begin(String namespace, String name, Attributes attributes)
+            throws Exception {
+
+        String realClassName = getRealClassName(attributes);
+
+        if (realClassName == null) {
+            throw new NullPointerException(sm.getString("rule.noClassName", namespace, name));
+        }
+
+        // Instantiate the new object and push it on the context stack
+        Class<?> clazz = digester.getClassLoader().loadClass(realClassName);
+        Object instance = clazz.getConstructor().newInstance();
+        digester.push(instance);//TODO, here have to understand it logic
+
+        StringBuilder code = digester.getGeneratedCode();
+        if (code != null) {
+            code.append(System.lineSeparator());
+            code.append(System.lineSeparator());
+            code.append(realClassName).append(' ').append(digester.toVariableName(instance)).append(" = new ");
+            code.append(realClassName).append("();").append(System.lineSeparator());
+        }
+    }
+
+
+
+    /**
+     * Return the actual class name of the class to be instantiated.
+     * @param attributes The attribute list for this element
+     * @return the class name
+     */
+    protected String getRealClassName(Attributes attributes) {
+        // Identify the name of the class to instantiate
+        String realClassName = className;
+        if (attributeName != null) {
+            String value = attributes.getValue(attributeName);
+            if (value != null) {
+                realClassName = value;
+            }
+        }
+        return realClassName;
+    }
+
+
 
 }
