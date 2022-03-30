@@ -125,9 +125,9 @@ public final class ClassLoaderFactory {
                 String msg = "Problem with directory [" + file +
                         "], exists:[" + file.exists() + "], isDirectory: [" + file.isDirectory() +
                         "], canRead: [" + file.canRead() + "]";
-                File home = new File(BootStrap.getCatalinaHome());
+                File home = new File(Bootstrap.getCatalinaHome());
                 home = home.getCanonicalFile();
-                File base = new File(BootStrap.getCatalinaBase());
+                File base = new File(Bootstrap.getCatalinaBase());
                 base = base.getCanonicalFile();
                 File defaultValue = new File(base, "lib");
 

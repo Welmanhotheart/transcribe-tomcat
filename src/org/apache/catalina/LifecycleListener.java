@@ -1,6 +1,5 @@
 package org.apache.catalina;
 
-import org.eclipse.core.internal.events.LifecycleEvent;
 
 public interface LifecycleListener {
     /**

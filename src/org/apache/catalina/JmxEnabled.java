@@ -1,4 +1,13 @@
 package org.apache.catalina;
 
-public interface JmxEnabled {
+import javax.management.MBeanRegistration;
+
+public interface JmxEnabled extends MBeanRegistration {
+
+    /**
+     * @return the domain under which this component will be / has been
+     * registered.
+     */
+    String getDomain();
+
 }

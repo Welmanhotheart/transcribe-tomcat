@@ -1,6 +1,7 @@
 package org.apache.catalina.startup;
 
 import org.apache.catalina.Container;
+import org.apache.catalina.LifecycleException;
 import org.apache.catalina.Server;
 import org.apache.catalina.connector.Connector;
 import org.apache.catalina.core.StandardContext;
@@ -11,6 +12,7 @@ import org.apache.tomcat.util.digester.Rule;
 import org.apache.tomcat.util.digester.RuleSet;
 import org.apache.tomcat.util.file.ConfigFileLoader;
 import org.apache.tomcat.util.file.ConfigurationSource;
+import org.apache.tomcat.util.log.SystemLogHandler;
 import org.apache.tomcat.util.res.StringManager;
 import org.xml.sax.Attributes;
 import org.xml.sax.InputSource;
@@ -22,7 +24,7 @@ import java.lang.reflect.Constructor;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
-
+import java.util.concurrent.TimeUnit;
 
 public class Catalina {
 
@@ -63,6 +65,11 @@ public class Catalina {
      */
     private boolean generateCode = false;
 
+    /**
+     * Rethrow exceptions on init failure.
+     */
+    protected boolean throwOnInitFailure =
+            Boolean.getBoolean("org.apache.catalina.startup.EXIT_ON_INIT_FAILURE");
 
 
     private String generatedCodePackage = "catalinaembedded";
@@ -74,6 +81,10 @@ public class Catalina {
 
     public Server getServer() {
         return server;
+    }
+
+    public void setServer(Server server) {
+        this.server = server;
     }
 
     public void load(String args[]) {
@@ -163,10 +174,44 @@ public class Catalina {
 
         // Parse main server.xml
         parseServerXml(true);
+
+        Server s = getServer();
+        if (s == null) {
+            return;
+        }
+
+        getServer().setCatalina(this);
+        getServer().setCatalinaHome(Bootstrap.getCatalinaHomeFile());
+        getServer().setCatalinaBase(Bootstrap.getCatalinaBaseFile());
+
+        // Stream redirection
+        initStreams();
+
+        // Start the new server
+        try {
+            getServer().init();
+        } catch (LifecycleException e) {
+            if (throwOnInitFailure) {
+                throw new java.lang.Error(e);
+            } else {
+                log.error(sm.getString("catalina.initError"), e);
+            }
+        }
+
+        if(log.isInfoEnabled()) {
+            log.info(sm.getString("catalina.init", Long.toString(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - t1))));
+        }
+    }
+
+
+    protected void initStreams() {
+        // Replace System.out and System.err with a custom PrintStream
+        System.setOut(new SystemLogHandler(System.out));
+        System.setErr(new SystemLogHandler(System.err));
     }
 
     private void parseServerXml(boolean start) {
-        ConfigFileLoader.setSource(new CatalinaBaseConfigurationSource(BootStrap.getCatalinaBaseFile(), getConfigFile()));
+        ConfigFileLoader.setSource(new CatalinaBaseConfigurationSource(Bootstrap.getCatalinaBaseFile(), getConfigFile()));
         File file = configFile();
 
         //TODO, unable to understand here
@@ -199,10 +244,10 @@ public class Catalina {
             if (generatedCodeLocationParameter != null) {
                 generatedCodeLocation = new File(generatedCodeLocationParameter);
                 if (!generatedCodeLocation.isAbsolute()) {
-                    generatedCodeLocation = new File(BootStrap.getCatalinaHome(),generatedCodeLocationParameter);
+                    generatedCodeLocation = new File(Bootstrap.getCatalinaHome(),generatedCodeLocationParameter);
                 }
             } else {
-                generatedCodeLocation = new File(BootStrap.getCatalinaHomeFile(), generatedCodeLocationParameter);
+                generatedCodeLocation = new File(Bootstrap.getCatalinaHomeFile(), generatedCodeLocationParameter);
             }
 
             serverXmlLocation = new File(generatedCodeLocation, generatedCodePackage);
@@ -432,7 +477,7 @@ public class Catalina {
     private File configFile() {
         File file = new File(configFile);
         if (!file.isAbsolute()) {
-            file = new File(BootStrap.getCatalinaBase(), configFile);
+            file = new File(Bootstrap.getCatalinaBase(), configFile);
         }
         return file;
     }

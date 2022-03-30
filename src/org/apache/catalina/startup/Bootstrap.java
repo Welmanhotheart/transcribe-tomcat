@@ -3,7 +3,6 @@ package org.apache.catalina.startup;
 import org.apache.catalina.security.SecurityClassLoad;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
-import org.eclipse.jdt.internal.compiler.lookup.ClassScope;
 
 import java.io.File;
 import java.io.IOException;
@@ -16,14 +15,14 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-public class BootStrap {
-    private static final Log log = LogFactory.getLog(BootStrap.class);
+public class Bootstrap {
+    private static final Log log = LogFactory.getLog(Bootstrap.class);
 
     /**
      * where does it be used TODO
      */
     private static final Object daemonLock = new Object();
-    private static volatile BootStrap daemon = null;
+    private static volatile Bootstrap daemon = null;
 
     private static final File catalinaBaseFile; //TODO
     private static final File catalinaHomeFile; //TODO
@@ -116,6 +115,9 @@ public class BootStrap {
     public static File getCatalinaBaseFile() {
         return catalinaBaseFile;
     }
+
+
+
 
     public static File getCatalinaHomeFile() {
         return catalinaHomeFile;
@@ -260,7 +262,7 @@ public class BootStrap {
         // here why it is used like so TODO
         synchronized (daemonLock) {
             if (daemon == null) {
-                BootStrap bootStrap = new BootStrap();
+                Bootstrap bootStrap = new Bootstrap();
                 try {
                     bootStrap.init();
                 } catch (Throwable t) { // here is throwable, why not Exception

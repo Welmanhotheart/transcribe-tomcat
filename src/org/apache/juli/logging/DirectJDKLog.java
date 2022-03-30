@@ -62,4 +62,19 @@ public class DirectJDKLog implements Log{
     public boolean isInfoEnabled() {
         return false;
     }
+
+    @Override
+    public boolean isTraceEnabled() {
+        return false;
+    }
+
+    @Override
+    public void trace(Object message) {
+
+    }
+
+    @Override
+    public void trace(Object message, Throwable t) {
+
+    }
 }

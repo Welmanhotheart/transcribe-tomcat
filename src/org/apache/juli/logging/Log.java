@@ -26,4 +26,35 @@ public interface Log {
     void warn(Object string, Throwable e);
 
     boolean isInfoEnabled();
+
+    /**
+     * <p> Is trace logging currently enabled? </p>
+     *
+     * <p> Call this method to prevent having to perform expensive operations
+     * (for example, <code>String</code> concatenation)
+     * when the log level is more than trace. </p>
+     *
+     * @return <code>true</code> if trace level logging is enabled, otherwise
+     *         <code>false</code>
+     */
+    public boolean isTraceEnabled();
+
+    /**
+     * <p> Log a message with trace log level. </p>
+     *
+     * @param message log this message
+     */
+    public void trace(Object message);
+
+
+    /**
+     * <p> Log an error with trace log level. </p>
+     *
+     * @param message log this message
+     * @param t log this cause
+     */
+    public void trace(Object message, Throwable t);
+
+
+
 }

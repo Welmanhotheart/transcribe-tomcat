@@ -59,8 +59,9 @@ public class ListenerCreateRule extends ObjectCreateRule {
             this.className = className;
         }
 
+
         @Override
-        public void lifecycleEvent(LifecycleEvent event) {
+        public void lifecycleEvent(org.apache.catalina.LifecycleEvent event) {
 
         }
     }

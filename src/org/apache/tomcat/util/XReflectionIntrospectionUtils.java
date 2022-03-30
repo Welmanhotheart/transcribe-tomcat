@@ -20,4 +20,16 @@ public class XReflectionIntrospectionUtils {
         throw new UnsupportedOperationException();
     }
 
+    /**
+     * Always throws {@link UnsupportedOperationException}
+     *
+     * @param o     Unused
+     * @param name  Unused
+     *
+     * @return Never returns normally
+     */
+    static Object getPropertyInternal(Object o, String name) {
+        throw new UnsupportedOperationException();
+    }
+
 }

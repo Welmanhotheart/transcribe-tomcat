@@ -107,6 +107,55 @@ public class IntrospectionUtils {
         return v;
     }
 
+
+    public static Object getProperty(Object o, String name) {
+        if (XReflectionIntrospectionUtils.isEnabled()) {
+            return XReflectionIntrospectionUtils.getPropertyInternal(o, name);
+        }
+        String getter = "get" + capitalize(name);
+        String isGetter = "is" + capitalize(name);
+
+        try {
+            Method methods[] = findMethods(o.getClass());
+            Method getPropertyMethod = null;
+
+            // First, the ideal case - a getFoo() method
+            for (Method method : methods) {
+                Class<?> paramT[] = method.getParameterTypes();
+                if (getter.equals(method.getName()) && paramT.length == 0) {
+                    return method.invoke(o, (Object[]) null);
+                }
+                if (isGetter.equals(method.getName()) && paramT.length == 0) {
+                    return method.invoke(o, (Object[]) null);
+                }
+
+                if ("getProperty".equals(method.getName())) {
+                    getPropertyMethod = method;
+                }
+            }
+
+            // Ok, no setXXX found, try a getProperty("name")
+            if (getPropertyMethod != null) {
+                Object params[] = new Object[1];
+                params[0] = name;
+                return getPropertyMethod.invoke(o, params);
+            }
+
+        } catch (IllegalArgumentException | SecurityException | IllegalAccessException e) {
+            log.warn(sm.getString("introspectionUtils.getPropertyError", name, o.getClass()), e);
+        } catch (InvocationTargetException e) {
+            if (e.getCause() instanceof NullPointerException) {
+                // Assume the underlying object uses a storage to represent an unset property
+                return null;
+            }
+            ExceptionUtils.handleThrowable(e.getCause());
+            log.warn(sm.getString("introspectionUtils.getPropertyError", name, o.getClass()), e);
+        }
+        return null;
+    }
+
+
+
     @SuppressWarnings("null") // setPropertyMethodVoid is not null when used
     public static boolean setProperty(Object o, String name, String value,
                                       boolean invokeSetProperty, StringBuilder actualMethod) {
