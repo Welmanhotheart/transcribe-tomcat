@@ -1,5 +1,6 @@
 package org.apache.catalina.connector;
 
+import org.apache.catalina.LifecycleException;
 import org.apache.catalina.Service;
 import org.apache.catalina.util.LifecycleMBeanBase;
 import org.apache.coyote.AbstractProtocol;
@@ -115,6 +116,20 @@ public class Connector extends LifecycleMBeanBase {
     public void setPort(int port) {
         setProperty("port", String.valueOf(port));
     }
+
+    /**
+     * Set the <code>Service</code> with which we are associated (if any).
+     *
+     * @param service The service that owns this Engine
+     */
+    public void setService(Service service) {
+        this.service = service;
+    }
+
+    public void setPortOffset(int portOffset) {
+        setProperty("portOffset", String.valueOf(portOffset));
+    }
+
 
     /**
      * Set the redirect port number.
@@ -233,4 +248,18 @@ public class Connector extends LifecycleMBeanBase {
     }
 
 
+    @Override
+    protected void destroyInternal() throws LifecycleException {
+
+    }
+
+    @Override
+    protected void stopInternal() throws LifecycleException {
+
+    }
+
+    @Override
+    protected void startInternal() throws LifecycleException {
+
+    }
 }

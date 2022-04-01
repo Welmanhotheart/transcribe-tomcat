@@ -1,5 +1,6 @@
 package org.apache.catalina.deploy;
 
+import org.apache.catalina.LifecycleException;
 import org.apache.catalina.util.LifecycleMBeanBase;
 import org.apache.tomcat.util.descriptor.web.NamingResources;
 
@@ -35,4 +36,18 @@ public class NamingResourcesImpl extends LifecycleMBeanBase
         this.container = container;
     }
 
+    @Override
+    protected void destroyInternal() throws LifecycleException {
+
+    }
+
+    @Override
+    protected void stopInternal() throws LifecycleException {
+
+    }
+
+    @Override
+    protected void startInternal() throws LifecycleException {
+
+    }
 }

@@ -17,6 +17,16 @@ public interface Server extends Lifecycle{
     public void setPort(int port);
 
     /**
+     * Get the number that offsets the port used for shutdown commands.
+     * For example, if port is 8005, and portOffset is 1000,
+     * the server listens at 9005.
+     *
+     * @return the port offset
+     */
+    public int getPortOffset();
+
+
+    /**
      * Set the shutdown command we are waiting for.
      *
      * @param shutdown The new shutdown command

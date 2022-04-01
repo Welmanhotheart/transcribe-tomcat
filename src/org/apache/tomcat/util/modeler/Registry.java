@@ -71,6 +71,22 @@ public class Registry {
     }
 
     /**
+     * Unregister a component. This is just a helper that avoids exceptions by
+     * checking if the mbean is already registered
+     *
+     * @param oname The bean name
+     */
+    public void unregisterComponent(ObjectName oname) {
+        try {
+            if (oname != null && getMBeanServer().isRegistered(oname)) {
+                getMBeanServer().unregisterMBean(oname);
+            }
+        } catch (Throwable t) {
+            log.error(sm.getString("registry.unregisterError"), t);
+        }
+    }
+
+    /**
      * Register a component
      *
      * @param bean The bean

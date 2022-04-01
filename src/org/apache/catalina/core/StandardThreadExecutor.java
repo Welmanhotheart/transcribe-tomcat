@@ -1,6 +1,7 @@
 package org.apache.catalina.core;
 
 import org.apache.catalina.Executor;
+import org.apache.catalina.LifecycleException;
 import org.apache.catalina.util.LifecycleMBeanBase;
 import org.apache.tomcat.util.res.StringManager;
 import org.apache.tomcat.util.threads.ResizableExecutor;
@@ -34,5 +35,20 @@ public class StandardThreadExecutor extends LifecycleMBeanBase
     @Override
     public String getName() {
         return name;
+    }
+
+    @Override
+    protected void destroyInternal() throws LifecycleException {
+
+    }
+
+    @Override
+    protected void stopInternal() throws LifecycleException {
+
+    }
+
+    @Override
+    protected void startInternal() throws LifecycleException {
+
     }
 }

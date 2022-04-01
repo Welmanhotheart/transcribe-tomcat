@@ -1,12 +1,15 @@
 package org.apache.catalina.core;
 
 import org.apache.catalina.Executor;
+import org.apache.catalina.LifecycleException;
 import org.apache.catalina.Service;
+import org.apache.catalina.connector.Connector;
 import org.apache.catalina.util.LifecycleMBeanBase;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.util.res.StringManager;
 
+import java.beans.PropertyChangeSupport;
 import java.util.ArrayList;
 
 
@@ -18,6 +21,17 @@ public class StandardService extends LifecycleMBeanBase implements Service {
      * The list of executors held by the service.
      */
     protected final ArrayList<Executor> executors = new ArrayList<>();
+
+    /**
+     * The set of Connectors associated with this Service.
+     */
+    protected Connector connectors[] = new Connector[0];
+    private final Object connectorsLock = new Object();
+
+    /**
+     * The property change support for this component.
+     */
+    protected final PropertyChangeSupport support = new PropertyChangeSupport(this);
 
 
     @Override
@@ -45,5 +59,44 @@ public class StandardService extends LifecycleMBeanBase implements Service {
             }
         }
         return null;
+    }
+
+    @Override
+    public void addConnector(Connector connector) {
+
+        synchronized (connectorsLock) {
+            connector.setService(this);
+            Connector results[] = new Connector[connectors.length + 1];
+            System.arraycopy(connectors, 0, results, 0, connectors.length);
+            results[connectors.length] = connector;
+            connectors = results;
+        }
+
+        try {
+            if (getState().isAvailable()) {
+                connector.start();
+            }
+        } catch (LifecycleException e) {
+            throw new IllegalArgumentException(
+                    sm.getString("standardService.connector.startFailed", connector), e);
+        }
+
+        // Report this property change to interested listeners
+        support.firePropertyChange("connector", null, connector);
+    }
+
+    @Override
+    protected void destroyInternal() throws LifecycleException {
+
+    }
+
+    @Override
+    protected void stopInternal() throws LifecycleException {
+
+    }
+
+    @Override
+    protected void startInternal() throws LifecycleException {
+
     }
 }

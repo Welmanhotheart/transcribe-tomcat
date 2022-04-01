@@ -1,5 +1,7 @@
 package org.apache.catalina;
 
+import org.apache.catalina.connector.Connector;
+
 public interface Service {
     /**
      * Retrieves executor by name, null if not found
@@ -14,5 +16,12 @@ public interface Service {
      */
     public String getDomain();
 
+    /**
+     * Add a new Connector to the set of defined Connectors, and associate it
+     * with this Service's Container.
+     *
+     * @param connector The Connector to be added
+     */
+    public void addConnector(Connector connector);
 
 }

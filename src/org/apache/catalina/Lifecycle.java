@@ -20,6 +20,10 @@ public interface Lifecycle {
      * The LifecycleEvent type for the "component start" event.
      */
     public static final String START_EVENT = "start";
+    /**
+     * {@inheritDoc}
+     */
+    public LifecycleState getState();
 
 
     /**
@@ -103,6 +107,59 @@ public interface Lifecycle {
      *  that prevents this component from being used
      */
     public void init() throws LifecycleException;
+
+    /**
+     * Prepare for the beginning of active use of the public methods other than
+     * property getters/setters and life cycle methods of this component. This
+     * method should be called before any of the public methods other than
+     * property getters/setters and life cycle methods of this component are
+     * utilized. The following {@link LifecycleEvent}s will be fired in the
+     * following order:
+     * <ol>
+     *   <li>BEFORE_START_EVENT: At the beginning of the method. It is as this
+     *                           point the state transitions to
+     *                           {@link LifecycleState#STARTING_PREP}.</li>
+     *   <li>START_EVENT: During the method once it is safe to call start() for
+     *                    any child components. It is at this point that the
+     *                    state transitions to {@link LifecycleState#STARTING}
+     *                    and that the public methods other than property
+     *                    getters/setters and life cycle methods may be
+     *                    used.</li>
+     *   <li>AFTER_START_EVENT: At the end of the method, immediately before it
+     *                          returns. It is at this point that the state
+     *                          transitions to {@link LifecycleState#STARTED}.
+     *                          </li>
+     * </ol>
+     *
+     * @exception LifecycleException if this component detects a fatal error
+     *  that prevents this component from being used
+     */
+    public void start() throws LifecycleException;
+
+    public void stop() throws LifecycleException;
+
+    /**
+     * Prepare to discard the object. The following {@link LifecycleEvent}s will
+     * be fired in the following order:
+     * <ol>
+     *   <li>DESTROY_EVENT: On the successful completion of component
+     *                      destruction.</li>
+     * </ol>
+     *
+     * @exception LifecycleException if this component detects a fatal error
+     *  that prevents this component from being used
+     */
+    public void destroy() throws LifecycleException;
+
+
+    /**
+     * Marker interface used to indicate that the instance should only be used
+     * once. Calling {@link #stop()} on an instance that supports this interface
+     * will automatically call {@link #destroy()} after {@link #stop()}
+     * completes.
+     */
+    public interface SingleUse {
+    }
 
 
 }

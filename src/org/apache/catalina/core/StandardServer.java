@@ -107,6 +107,12 @@ public class StandardServer extends LifecycleMBeanBase implements Server {
         return null;
     }
 
+    private int portOffset = 0;
+
+    @Override
+    public int getPortOffset() {
+        return portOffset;
+    }
 
     /**
      * Set the global naming resources.
@@ -124,6 +130,21 @@ public class StandardServer extends LifecycleMBeanBase implements Server {
         support.firePropertyChange("globalNamingResources",
                 oldGlobalNamingResources,
                 this.globalNamingResources);
+
+    }
+
+    @Override
+    protected void destroyInternal() throws LifecycleException {
+
+    }
+
+    @Override
+    protected void stopInternal() throws LifecycleException {
+
+    }
+
+    @Override
+    protected void startInternal() throws LifecycleException {
 
     }
 }

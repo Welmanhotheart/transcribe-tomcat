@@ -103,6 +103,30 @@ public abstract class LifecycleMBeanBase extends LifecycleBase  implements JmxEn
     }
 
     /**
+     * Sub-classes wishing to perform additional clean-up should override this
+     * method, ensuring that super.destroyInternal() is the last call in the
+     * overriding method.
+     */
+    @Override
+    protected void destroyInternal() throws LifecycleException {
+        unregister(oname);
+    }
+
+    /**
+     * Utility method to enable sub-classes to easily unregister additional
+     * components that don't implement {@link JmxEnabled} with an MBean server.
+     * <br>
+     * Note: This method should only be used once {@link #initInternal()} has
+     * been called and before {@link #destroyInternal()} has been called.
+     *
+     * @param on    The name of the component to unregister
+     */
+    protected final void unregister(ObjectName on) {
+        Registry.getRegistry(null, null).unregisterComponent(on);
+    }
+
+
+    /**
      * Allows the object to be registered with an alternative
      * {@link MBeanServer} and/or {@link ObjectName}.
      */
