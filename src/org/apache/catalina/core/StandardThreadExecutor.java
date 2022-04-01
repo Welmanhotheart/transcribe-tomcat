@@ -8,6 +8,12 @@ import org.apache.tomcat.util.threads.ResizableExecutor;
 public class StandardThreadExecutor extends LifecycleMBeanBase
         implements Executor, ResizableExecutor {
 
+    /**
+     * the name of this thread pool
+     */
+    protected String name;
+
+
     protected static final StringManager sm = StringManager.getManager(StandardThreadExecutor.class);
 
     @Override
@@ -23,5 +29,10 @@ public class StandardThreadExecutor extends LifecycleMBeanBase
     @Override
     protected String getDomainInternal() {
         return null;
+    }
+
+    @Override
+    public String getName() {
+        return name;
     }
 }

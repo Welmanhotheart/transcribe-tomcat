@@ -546,7 +546,6 @@ public class Digester extends DefaultHandler2 {
         if (debug) {
             log.debug("  New match='" + match + "'");
         }
-
         // Fire "begin" events for all relevant rules
         List<Rule> rules = getRules().match(namespaceURI, match);
         matches.push(rules);//why here it needs to push the rules TODO

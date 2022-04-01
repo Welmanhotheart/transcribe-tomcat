@@ -132,6 +132,19 @@ public abstract class LifecycleBase implements Lifecycle {
         return throwOnFailure;
     }
 
+    /**
+     * Configure if a {@link LifecycleException} thrown by a sub-class during
+     * {@link #initInternal()}, {@link #startInternal()},
+     * {@link #stopInternal()} or {@link #destroyInternal()} will be re-thrown
+     * for the caller to handle or if it will be logged instead.
+     *
+     * @param throwOnFailure {@code true} if the exception should be re-thrown,
+     *                       otherwise {@code false}
+     */
+    public void setThrowOnFailure(boolean throwOnFailure) {
+        this.throwOnFailure = throwOnFailure;
+    }
+
 
     private void handleSubClassException(Throwable t, String key, Object... args) throws LifecycleException {
         setStateInternal(LifecycleState.FAILED, null, false);

@@ -154,6 +154,18 @@ public class IntrospectionUtils {
         return null;
     }
 
+    /**
+     * Find a method with the right name If found, call the method ( if param is
+     * int or boolean we'll convert value to the right type before) - that means
+     * you can have setDebug(1).
+     * @param o The object to set a property on
+     * @param name The property name
+     * @param value The property value
+     * @return <code>true</code> if operation was successful
+     */
+    public static boolean setProperty(Object o, String name, String value) {
+        return setProperty(o, name, value, true, null);
+    }
 
 
     @SuppressWarnings("null") // setPropertyMethodVoid is not null when used
