@@ -4,6 +4,7 @@ import org.apache.catalina.Executor;
 import org.apache.catalina.LifecycleException;
 import org.apache.catalina.Service;
 import org.apache.catalina.connector.Connector;
+import org.apache.catalina.mapper.Mapper;
 import org.apache.catalina.util.LifecycleMBeanBase;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
@@ -32,6 +33,11 @@ public class StandardService extends LifecycleMBeanBase implements Service {
      * The property change support for this component.
      */
     protected final PropertyChangeSupport support = new PropertyChangeSupport(this);
+
+    /**
+     * Mapper.
+     */
+    protected final Mapper mapper = new Mapper();
 
 
     @Override
@@ -83,6 +89,11 @@ public class StandardService extends LifecycleMBeanBase implements Service {
 
         // Report this property change to interested listeners
         support.firePropertyChange("connector", null, connector);
+    }
+
+    @Override
+    public Mapper getMapper() {
+        return mapper;
     }
 
     @Override

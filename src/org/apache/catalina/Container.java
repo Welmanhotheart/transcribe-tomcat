@@ -63,4 +63,12 @@ public interface Container extends Lifecycle{
     public Container[] findChildren();
 
 
+    /**
+     * Set the Realm with which this Container is associated.
+     *
+     * @param realm The newly associated Realm
+     */
+    public void setRealm(Realm realm);
+
+
 }

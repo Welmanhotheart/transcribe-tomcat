@@ -145,6 +145,57 @@ public class ContainerBase extends LifecycleMBeanBase implements Container {
         super.destroyInternal();
     }
 
+
+    /**
+     * Set the Realm with which this Container is associated.
+     *
+     * @param realm The newly associated Realm
+     */
+    @Override
+    public void setRealm(Realm realm) {
+
+        Lock l = realmLock.writeLock();
+        l.lock();
+        try {
+            // Change components if necessary
+            Realm oldRealm = this.realm;
+            if (oldRealm == realm) {
+                return;
+            }
+            this.realm = realm;
+
+            // Stop the old component if necessary
+            if (getState().isAvailable() && (oldRealm != null) &&
+                    (oldRealm instanceof Lifecycle)) {
+                try {
+                    ((Lifecycle) oldRealm).stop();
+                } catch (LifecycleException e) {
+                    log.error(sm.getString("containerBase.realm.stop"), e);
+                }
+            }
+
+            // Start the new component if necessary
+            if (realm != null) {
+                realm.setContainer(this);
+            }
+            if (getState().isAvailable() && (realm != null) &&
+                    (realm instanceof Lifecycle)) {
+                try {
+                    ((Lifecycle) realm).start();
+                } catch (LifecycleException e) {
+                    log.error(sm.getString("containerBase.realm.start"), e);
+                }
+            }
+
+            // Report this property change to interested listeners
+            support.firePropertyChange("realm", oldRealm, this.realm);
+        } finally {
+            l.unlock();
+        }
+
+    }
+
+
     /**
      * Remove an existing child Container from association with this parent
      * Container.

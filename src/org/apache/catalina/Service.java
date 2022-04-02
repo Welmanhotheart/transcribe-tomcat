@@ -1,6 +1,7 @@
 package org.apache.catalina;
 
 import org.apache.catalina.connector.Connector;
+import org.apache.catalina.mapper.Mapper;
 
 public interface Service {
     /**
@@ -23,5 +24,10 @@ public interface Service {
      * @param connector The Connector to be added
      */
     public void addConnector(Connector connector);
+
+    /**
+     * @return the mapper associated with this Service.
+     */
+    Mapper getMapper();
 
 }
