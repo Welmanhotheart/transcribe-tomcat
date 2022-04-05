@@ -1,10 +1,9 @@
 package org.apache.catalina.core;
 
-import org.apache.catalina.Executor;
-import org.apache.catalina.LifecycleException;
-import org.apache.catalina.Service;
+import org.apache.catalina.*;
 import org.apache.catalina.connector.Connector;
 import org.apache.catalina.mapper.Mapper;
+import org.apache.catalina.mapper.MapperListener;
 import org.apache.catalina.util.LifecycleMBeanBase;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
@@ -23,6 +22,15 @@ public class StandardService extends LifecycleMBeanBase implements Service {
      */
     protected final ArrayList<Executor> executors = new ArrayList<>();
 
+    private Engine engine = null;
+
+    /**
+     * Mapper listener.
+     */
+    protected final MapperListener mapperListener = new MapperListener(this);
+
+
+
     /**
      * The set of Connectors associated with this Service.
      */
@@ -38,6 +46,14 @@ public class StandardService extends LifecycleMBeanBase implements Service {
      * Mapper.
      */
     protected final Mapper mapper = new Mapper();
+
+    private ClassLoader parentClassLoader = null;
+
+    /**
+     * The <code>Server</code> that owns this Service, if any.
+     */
+    private Server server = null;
+    private String name;
 
 
     @Override
@@ -68,6 +84,81 @@ public class StandardService extends LifecycleMBeanBase implements Service {
     }
 
     @Override
+    public void setContainer(Engine engine) {
+        Engine oldEngine = this.engine;
+        if (oldEngine != null) {
+            oldEngine.setService(null);
+        }
+        this.engine = engine;
+        if (this.engine != null) {
+            this.engine.setService(this);
+        }
+        if (getState().isAvailable()) {
+            if (this.engine != null) {
+                try {
+                    this.engine.start();
+                } catch (LifecycleException e) {
+                    log.error(sm.getString("standardService.engine.startFailed"), e);
+                }
+            }
+            // Restart MapperListener to pick up new engine.
+            try {
+                mapperListener.stop();
+            } catch (LifecycleException e) {
+                log.error(sm.getString("standardService.mapperListener.stopFailed"), e);
+            }
+            try {
+                mapperListener.start();
+            } catch (LifecycleException e) {
+                log.error(sm.getString("standardService.mapperListener.startFailed"), e);
+            }
+            if (oldEngine != null) {
+                try {
+                    oldEngine.stop();
+                } catch (LifecycleException e) {
+                    log.error(sm.getString("standardService.engine.stopFailed"), e);
+                }
+            }
+        }
+
+        // Report this property change to interested listeners
+        support.firePropertyChange("container", oldEngine, this.engine);
+    }
+
+
+    /**
+     * Return the parent class loader for this component.
+     */
+    @Override
+    public ClassLoader getParentClassLoader() {
+        if (parentClassLoader != null) {
+            return parentClassLoader;
+        }
+        if (server != null) {
+            return server.getParentClassLoader();
+        }
+        return ClassLoader.getSystemClassLoader();
+    }
+
+    /**
+     * Return the name of this Service.
+     */
+    @Override
+    public String getName() {
+        return name;
+    }
+
+    /**
+     * Set the name of this Service.
+     *
+     * @param name The new service name
+     */
+    @Override
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    @Override
     public void addConnector(Connector connector) {
 
         synchronized (connectorsLock) {
@@ -95,6 +186,28 @@ public class StandardService extends LifecycleMBeanBase implements Service {
     public Mapper getMapper() {
         return mapper;
     }
+
+    @Override
+    public Server getServer() {
+        return null;
+    }
+
+    /**
+     * Set the <code>Server</code> with which we are associated (if any).
+     *
+     * @param server The server that owns this Service
+     */
+    @Override
+    public void setServer(Server server) {
+        this.server = server;
+    }
+
+    @Override
+    public Engine getContainer() {
+        return engine;
+    }
+
+
 
     @Override
     protected void destroyInternal() throws LifecycleException {

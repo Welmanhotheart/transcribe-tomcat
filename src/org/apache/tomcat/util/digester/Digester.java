@@ -14,7 +14,10 @@ import org.xml.sax.helpers.AttributesImpl;
 import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.util.*;
 
@@ -32,6 +35,11 @@ public class Digester extends DefaultHandler2 {
      * The Locator associated with our parser.
      */
     protected Locator locator = null;
+    /**
+     * The application-supplied error handler that is notified when parsing
+     * warnings, errors, or fatal errors occur.
+     */
+    protected ErrorHandler errorHandler = null;
 
     private Object root = null;
     private Rules rules;
@@ -48,6 +56,12 @@ public class Digester extends DefaultHandler2 {
 
     protected ArrayStack<List<Rule>> matches = new ArrayStack<>(10);
 
+    /**
+     * The parameters stack being utilized by CallMethodRule and
+     * CallParamRule rules.
+     */
+    protected ArrayStack<Object> params = new ArrayStack<>();
+
 
     /**
      * The Log to which all SAX event related logging calls will be made.
@@ -63,6 +77,12 @@ public class Digester extends DefaultHandler2 {
      * The XMLReader used to parse digester rules.
      */
     protected XMLReader reader = null;
+
+    /**
+     * The public identifier of the DTD we are currently parsing under
+     * (if any).
+     */
+    protected String publicId = null;
 
 
     /**
@@ -146,11 +166,80 @@ public class Digester extends DefaultHandler2 {
 
     }
 
+    /**
+     * Parse the content of the specified file using this Digester.  Returns
+     * the root element from the object stack (if any).
+     *
+     * @param file File containing the XML data to be parsed
+     * @return the root object
+     * @exception IOException if an input/output error occurs
+     * @exception SAXException if a parsing exception occurs
+     */
+    public Object parse(File file) throws IOException, SAXException {
+        configure();
+        InputSource input = new InputSource(new FileInputStream(file));
+        input.setSystemId("file://" + file.getAbsolutePath());
+        getXMLReader().parse(input);
+        return root;
+    }
+
     public Object parse(InputSource inputSource) throws SAXException, IOException {
         configure();
         // here read do the parsing process
         getXMLReader().parse(inputSource);
         return root;
+    }
+
+    /**
+     * Set the error handler for this Digester.
+     *
+     * @param errorHandler The new error handler
+     */
+    public void setErrorHandler(ErrorHandler errorHandler) {
+        this.errorHandler = errorHandler;
+    }
+
+
+    /**
+     * Parse the content of the specified input stream using this Digester.
+     * Returns the root element from the object stack (if any).
+     *
+     * @param input Input stream containing the XML data to be parsed
+     * @return the root object
+     * @exception IOException if an input/output error occurs
+     * @exception SAXException if a parsing exception occurs
+     */
+    public Object parse(InputStream input) throws IOException, SAXException {
+        configure();
+        InputSource is = new InputSource(input);
+        getXMLReader().parse(is);
+        return root;
+    }
+    public void reset() {
+        root = null;
+        setErrorHandler(null);
+        clear();
+    }
+
+    /**
+     * Clear the current contents of the object stack.
+     * <p>
+     * Calling this method <i>might</i> allow another document of the same type
+     * to be correctly parsed. However this method was not intended for this
+     * purpose. In general, a separate Digester object should be created for
+     * each document to be parsed.
+     */
+    public void clear() {
+
+        match = "";
+        bodyTexts.clear();
+        params.clear();
+        publicId = null;
+        stack.clear();
+        log = null;
+        saxLog = null;
+        configured = false;
+
     }
 
     /**
@@ -324,6 +413,14 @@ public class Digester extends DefaultHandler2 {
         }
         return this.rules;
     }
+
+    /**
+     * @return the current depth of the element stack.
+     */
+    public int getCount() {
+        return stack.size();
+    }
+
 
     public void addRuleSet(RuleSet ruleSet) {
         ruleSet.addRuleInstances(this);
@@ -571,6 +668,70 @@ public class Digester extends DefaultHandler2 {
             }
         }
 
+    }
+
+    /**
+     * Add an "call method" rule for a method which accepts no arguments.
+     *
+     * @param pattern Element matching pattern
+     * @param methodName Method name to be called
+     * @see CallMethodRule
+     */
+    public void addCallMethod(String pattern, String methodName) {
+
+        addRule(pattern, new CallMethodRule(methodName));
+
+    }
+
+    /**
+     * Add an "call method" rule for the specified parameters.
+     *
+     * @param pattern Element matching pattern
+     * @param methodName Method name to be called
+     * @param paramCount Number of expected parameters (or zero
+     *  for a single parameter from the body of this element)
+     * @see CallMethodRule
+     */
+    public void addCallMethod(String pattern, String methodName, int paramCount) {
+
+        addRule(pattern, new CallMethodRule(methodName, paramCount));
+
+    }
+
+    /**
+     * <p>Push a new object onto the top of the parameters stack.</p>
+     *
+     * <p>The parameters stack is used to store <code>CallMethodRule</code> parameters.
+     * See {@link #params}.</p>
+     *
+     * @param object The new object
+     */
+    public void pushParams(Object object) {
+        if (log.isTraceEnabled()) {
+            log.trace("Pushing params");
+        }
+        params.push(object);
+
+    }
+
+    /**
+     * <p>Pop the top object off of the parameters stack, and return it.  If there are
+     * no objects on the stack, return <code>null</code>.</p>
+     *
+     * <p>The parameters stack is used to store <code>CallMethodRule</code> parameters.
+     * See {@link #params}.</p>
+     * @return the top object on the parameters stack
+     */
+    public Object popParams() {
+        try {
+            if (log.isTraceEnabled()) {
+                log.trace("Popping params");
+            }
+            return params.pop();
+        } catch (EmptyStackException e) {
+            log.warn(sm.getString("digester.emptyStack"));
+            return null;
+        }
     }
 
     /**

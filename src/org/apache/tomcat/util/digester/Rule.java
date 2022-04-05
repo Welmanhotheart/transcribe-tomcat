@@ -35,4 +35,14 @@ public class Rule {
         return namespaceURI;
     }
 
+
+    /**
+     * This method is called after all parsing methods have been
+     * called, to allow Rules to remove temporary data.
+     *
+     * @throws Exception if an error occurs while processing the event
+     */
+    public void finish() throws Exception {
+        // NO-OP by default.
+    }
 }

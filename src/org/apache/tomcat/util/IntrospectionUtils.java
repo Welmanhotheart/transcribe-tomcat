@@ -107,6 +107,82 @@ public class IntrospectionUtils {
         return v;
     }
 
+    public static Object callMethodN(Object target, String methodN,
+                                     Object params[], Class<?> typeParams[]) throws Exception {
+        Method m = null;
+        m = findMethod(target.getClass(), methodN, typeParams);
+        if (m == null) {
+            if (log.isDebugEnabled()) {
+                log.debug("IntrospectionUtils: Can't find method " + methodN +
+                        " in " + target + " CLASS " + target.getClass());
+            }
+            return null;
+        }
+        try {
+            Object o = m.invoke(target, params);
+
+            if (log.isDebugEnabled()) {
+                // debug
+                StringBuilder sb = new StringBuilder();
+                sb.append(target.getClass().getName()).append('.')
+                        .append(methodN).append("( ");
+                for (int i = 0; i < params.length; i++) {
+                    if (i > 0) {
+                        sb.append(", ");
+                    }
+                    sb.append(params[i]);
+                }
+                sb.append(")");
+                log.debug("IntrospectionUtils:" + sb.toString());
+            }
+            return o;
+        } catch (InvocationTargetException ie) {
+            ExceptionUtils.handleThrowable(ie.getCause());
+            throw ie;
+        }
+    }
+
+
+    public static Object convert(String object, Class<?> paramType) {
+        Object result = null;
+        if ("java.lang.String".equals(paramType.getName())) {
+            result = object;
+        } else if ("java.lang.Integer".equals(paramType.getName())
+                || "int".equals(paramType.getName())) {
+            try {
+                result = Integer.valueOf(object);
+            } catch (NumberFormatException ex) {
+            }
+            // Try a setFoo ( boolean )
+        } else if ("java.lang.Boolean".equals(paramType.getName())
+                || "boolean".equals(paramType.getName())) {
+            result = Boolean.valueOf(object);
+
+            // Try a setFoo ( InetAddress )
+        } else if ("java.net.InetAddress".equals(paramType
+                .getName())) {
+            try {
+                result = InetAddress.getByName(object);
+            } catch (UnknownHostException exc) {
+                if (log.isDebugEnabled()) {
+                    log.debug("IntrospectionUtils: Unable to resolve host name:" +
+                            object);
+                }
+            }
+
+            // Unknown type
+        } else {
+            if (log.isDebugEnabled()) {
+                log.debug("IntrospectionUtils: Unknown type " +
+                        paramType.getName());
+            }
+        }
+        if (result == null) {
+            throw new IllegalArgumentException(sm.getString("introspectionUtils.conversionError", object, paramType.getName()));
+        }
+        return result;
+    }
+
 
     public static Object getProperty(Object o, String name) {
         if (XReflectionIntrospectionUtils.isEnabled()) {

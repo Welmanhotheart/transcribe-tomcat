@@ -55,6 +55,20 @@ public interface Log {
      */
     public void trace(Object message, Throwable t);
 
+    /**
+     * <p> Log a message with fatal log level. </p>
+     *
+     * @param message log this message
+     */
+    public void fatal(Object message);
 
+
+    /**
+     * <p> Log an error with fatal log level. </p>
+     *
+     * @param message log this message
+     * @param t log this cause
+     */
+    public void fatal(Object message, Throwable t);
 
 }

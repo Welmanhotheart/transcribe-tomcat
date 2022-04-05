@@ -86,6 +86,21 @@ public abstract class LifecycleBase implements Lifecycle {
     }
 
     /**
+     * Provides a mechanism for sub-classes to update the component state.
+     * Calling this method will automatically fire any associated
+     * {@link Lifecycle} event. It will also check that any attempted state
+     * transition is valid for a sub-class.
+     *
+     * @param state The new state for this component
+     * @throws LifecycleException when attempting to set an invalid state
+     */
+    protected synchronized void setState(LifecycleState state) throws LifecycleException {
+        setStateInternal(state, null, true);
+    }
+
+
+
+    /**
      * Allow sub classes to fire {@link Lifecycle} events.
      *
      * @param type  Event type

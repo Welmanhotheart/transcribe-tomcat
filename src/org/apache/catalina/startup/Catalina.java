@@ -24,6 +24,7 @@ import java.lang.reflect.Constructor;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 public class Catalina {
@@ -289,6 +290,7 @@ public class Catalina {
 
                 }
             } catch (Exception e) {
+                e.printStackTrace();
                 log.warn(sm.getString("catalina.configFail", file.getAbsolutePath()), e);
                 if (file.exists() && !file.canRead()) {
                     log.warn(sm.getString("catalina.incorrectPermissions"));
@@ -310,27 +312,33 @@ public class Catalina {
     }
 
     /**
-     * create Digester for startup? TODO
-     * @return
+     * Create and configure the Digester we will be using for startup.
+     * @return the main digester to parse server.xml
      */
-    private Digester createStartDigester() {
+    protected Digester createStartDigester() {
+        // Initialize the digester
         Digester digester = new Digester();
         digester.setValidating(false);
         digester.setRulesValidation(true);
-        HashMap<Class<?>, List<String>> fakeAttributes = new HashMap<>();
-        List<String> objectAttrs = new ArrayList();
+        Map<Class<?>, List<String>> fakeAttributes = new HashMap<>();
+        // Ignore className on all elements
+        List<String> objectAttrs = new ArrayList<>();
         objectAttrs.add("className");
         fakeAttributes.put(Object.class, objectAttrs);
+        // Ignore attribute added by Eclipse for its internal tracking
         List<String> contextAttrs = new ArrayList<>();
         contextAttrs.add("source");
         fakeAttributes.put(StandardContext.class, contextAttrs);
+        // Ignore Connector attribute used internally but set on Server
         List<String> connectorAttrs = new ArrayList<>();
         connectorAttrs.add("portOffset");
         fakeAttributes.put(Connector.class, connectorAttrs);
         digester.setFakeAttributes(fakeAttributes);
         digester.setUseContextClassLoader(true);
 
-        digester.addObjectCreate("Server", "org.apache.catalina.core.StandardServer",
+        // Configure the actions we will be using
+        digester.addObjectCreate("Server",
+                "org.apache.catalina.core.StandardServer",
                 "className");
         digester.addSetProperties("Server");
         digester.addSetNext("Server",
@@ -344,7 +352,6 @@ public class Catalina {
                 "setGlobalNamingResources",
                 "org.apache.catalina.deploy.NamingResourcesImpl");
 
-        //TODO, here is what
         digester.addRule("Server/Listener",
                 new ListenerCreateRule(null, "className"));
         digester.addSetProperties("Server/Listener");
@@ -360,7 +367,6 @@ public class Catalina {
                 "addService",
                 "org.apache.catalina.Service");
 
-        // why here is null
         digester.addObjectCreate("Server/Service/Listener",
                 null, // MUST be specified in the element
                 "className");
@@ -446,8 +452,8 @@ public class Catalina {
                 new SetParentClassLoaderRule(parentClassLoader));
         addClusterRuleSet(digester, "Server/Service/Engine/Cluster/");
 
-
         return digester;
+
     }
 
 

@@ -1,8 +1,9 @@
 package org.apache.catalina.core;
 
-import org.apache.catalina.Engine;
-import org.apache.catalina.Service;
+import org.apache.catalina.*;
+import org.apache.juli.logging.Log;
 
+import java.io.File;
 import java.util.Locale;
 
 public class StandardEngine extends ContainerBase implements Engine {
@@ -17,6 +18,7 @@ public class StandardEngine extends ContainerBase implements Engine {
      * The <code>Service</code> that owns this Engine, if any.
      */
     private Service service = null;
+
 
 
     /**
@@ -40,4 +42,46 @@ public class StandardEngine extends ContainerBase implements Engine {
                 this.defaultHost);
 
     }
+
+    @Override
+    public void setService(Service service) {
+
+    }
+
+    @Override
+    public File getCatalinaBase() {
+        if (service != null) {
+            Server s = service.getServer();
+            if (s != null) {
+                File base = s.getCatalinaBase();
+                if (base != null) {
+                    return base;
+                }
+            }
+        }
+        // Fall-back
+        return super.getCatalinaBase();
+    }
+
+    @Override
+    public Container findChild(String name) {
+        return null;
+    }
+
+
+    /**
+     * Return the parent class loader for this component.
+     */
+    @Override
+    public ClassLoader getParentClassLoader() {
+        if (parentClassLoader != null) {
+            return parentClassLoader;
+        }
+        if (service != null) {
+            return service.getParentClassLoader();
+        }
+        return ClassLoader.getSystemClassLoader();
+    }
+
+
 }

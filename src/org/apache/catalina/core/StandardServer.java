@@ -35,6 +35,11 @@ public class StandardServer extends LifecycleMBeanBase implements Server {
      */
     private NamingResourcesImpl globalNamingResources = null;
 
+    /**
+     * The set of Services associated with this Server.
+     */
+    private Service services[] = new Service[0];
+    private final Object servicesLock = new Object();
 
     public StandardServer() {
         System.out.println("dasf");
@@ -77,6 +82,19 @@ public class StandardServer extends LifecycleMBeanBase implements Server {
         return catalina;
     }
 
+    @Override
+    public File getCatalinaBase() {
+        if (catalinaBase != null) {
+            return catalinaBase;
+        }
+
+        catalinaBase = getCatalinaHome();
+        return catalinaBase;
+    }
+    @Override
+    public File getCatalinaHome() {
+        return catalinaHome;
+    }
 
     /**
      * Set the outer Catalina startup/shutdown component if present.
@@ -95,6 +113,11 @@ public class StandardServer extends LifecycleMBeanBase implements Server {
     @Override
     public void setCatalinaBase(File catalinaBase) {
         this.catalinaBase = catalinaBase;
+    }
+
+    @Override
+    public ClassLoader getParentClassLoader() {
+        return null;
     }
 
     @Override
@@ -130,6 +153,63 @@ public class StandardServer extends LifecycleMBeanBase implements Server {
         support.firePropertyChange("globalNamingResources",
                 oldGlobalNamingResources,
                 this.globalNamingResources);
+
+    }
+
+    /**
+     * @return the specified Service (if it exists); otherwise return
+     * <code>null</code>.
+     *
+     * @param name Name of the Service to be returned
+     */
+    @Override
+    public Service findService(String name) {
+        if (name == null) {
+            return null;
+        }
+        synchronized (servicesLock) {
+            for (Service service : services) {
+                if (name.equals(service.getName())) {
+                    return service;
+                }
+            }
+        }
+        return null;
+    }
+
+
+    @Override
+    public Service[] findServices() {
+        return new Service[0];
+    }
+
+    /**
+     * Add a new Service to the set of defined Services.
+     *
+     * @param service The Service to be added
+     */
+    @Override
+    public void addService(Service service) {
+
+        service.setServer(this);
+
+        synchronized (servicesLock) {
+            Service results[] = new Service[services.length + 1];
+            System.arraycopy(services, 0, results, 0, services.length);
+            results[services.length] = service;
+            services = results;
+
+            if (getState().isAvailable()) {
+                try {
+                    service.start();
+                } catch (LifecycleException e) {
+                    // Ignore
+                }
+            }
+
+            // Report this property change to interested listeners
+            support.firePropertyChange("service", null, service);
+        }
 
     }
 

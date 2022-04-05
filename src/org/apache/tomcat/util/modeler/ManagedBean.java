@@ -141,5 +141,17 @@ public class ManagedBean implements java.io.Serializable{
         return this.type;
     }
 
+    /**
+     * @return the (optional) <code>ObjectName</code> domain in which
+     *  this MBean should be registered in the MBeanServer.
+     */
+    public String getDomain() {
+        return this.domain;
+    }
+
+    public void setDomain(String domain) {
+        this.domain = domain;
+    }
+
 
 }

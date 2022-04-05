@@ -28,4 +28,38 @@ import java.util.Iterator;
  * @since 4.1
  */
 public interface UserDatabase {
+    /**
+     * Is the database data loaded on demand. This is used to avoid eager
+     * loading of the full database data, for example for JMX registration of
+     * all objects.
+     *
+     * @return false
+     */
+    public default boolean isSparse() {
+        return false;
+    }
+
+    /**
+     * @return the unique global identifier of this user database.
+     */
+    public String getId();
+
+
+    /**
+     * @return the set of {@link Role}s defined in this user database.
+     */
+    public Iterator<Role> getRoles();
+
+    /**
+     * @return the set of {@link Group}s defined in this user database.
+     */
+    public Iterator<Group> getGroups();
+
+    /**
+     * @return the set of {@link User}s defined in this user database.
+     */
+    public Iterator<User> getUsers();
+
+
+
 }

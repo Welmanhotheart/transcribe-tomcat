@@ -79,4 +79,18 @@ public class ConnectorCreateRule extends Rule {
             log.warn(sm.getString("connector.noSetExecutor", con));
         }
     }
+
+    /**
+     * Process the end of this element.
+     *
+     * @param namespace the namespace URI of the matching element, or an
+     *   empty string if the parser is not namespace aware or the element has
+     *   no namespace
+     * @param name the local name if the parser is namespace aware, or just
+     *   the element name otherwise
+     */
+    @Override
+    public void end(String namespace, String name) throws Exception {
+        digester.pop();
+    }
 }

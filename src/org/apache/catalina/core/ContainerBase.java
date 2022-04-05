@@ -1,12 +1,17 @@
 package org.apache.catalina.core;
 
 import org.apache.catalina.*;
+import org.apache.catalina.util.ContextName;
 import org.apache.catalina.util.LifecycleMBeanBase;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.util.res.StringManager;
 
+import javax.management.NotificationBroadcasterSupport;
 import java.beans.PropertyChangeSupport;
+import java.io.File;
+import java.security.AccessController;
+import java.security.PrivilegedAction;
 import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -15,7 +20,7 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-public class ContainerBase extends LifecycleMBeanBase implements Container {
+public abstract class ContainerBase extends LifecycleMBeanBase implements Container {
     private static final Log log = LogFactory.getLog(ContainerBase.class);
 
     /**
@@ -38,9 +43,31 @@ public class ContainerBase extends LifecycleMBeanBase implements Container {
     protected final Pipeline pipeline = new StandardPipeline(this);
 
     /**
+     * The broadcaster that sends j2ee notifications.
+     */
+    private NotificationBroadcasterSupport broadcaster = null;
+
+    /**
+     * The Logger implementation with which this Container is associated.
+     */
+    protected Log logger = null;
+
+
+    /**
+     * Associated logger name.
+     */
+    protected String logName = null;
+
+    /**
      * The parent Container to which this Container is a child.
      */
     protected Container parent = null;
+
+    /**
+     * Will children be started automatically when they are added.
+     */
+    protected boolean startChildren = true;
+
 
     /**
      * The number of threads available to process start and stop events for any
@@ -49,6 +76,80 @@ public class ContainerBase extends LifecycleMBeanBase implements Container {
     private int startStopThreads = 1;
     protected ExecutorService startStopExecutor;
 
+
+    /**
+     * Convenience method, intended for use by the digester to simplify the
+     * process of adding Valves to containers. See
+     * {@link Pipeline#addValve(Valve)} for full details. Components other than
+     * the digester should use {@link #getPipeline()}.{@link #addValve(Valve)} in case a
+     * future implementation provides an alternative method for the digester to
+     * use.
+     *
+     * @param valve Valve to be added
+     *
+     * @exception IllegalArgumentException if this Container refused to
+     *  accept the specified Valve
+     * @exception IllegalArgumentException if the specified Valve refuses to be
+     *  associated with this Container
+     * @exception IllegalStateException if the specified Valve is already
+     *  associated with a different Container
+     */
+    public synchronized void addValve(Valve valve) {
+
+        pipeline.addValve(valve);
+    }
+
+    @Override
+    public void addChild(Container child) {
+        if (Globals.IS_SECURITY_ENABLED) {
+            PrivilegedAction<Void> dp =
+                    new PrivilegedAddChild(child);
+            AccessController.doPrivileged(dp);
+        } else {
+            addChildInternal(child);
+        }
+    }
+
+    /**
+     * Add a container event listener to this component.
+     *
+     * @param listener The listener to add
+     */
+    @Override
+    public void addContainerListener(ContainerListener listener) {
+        listeners.add(listener);
+    }
+
+    private void addChildInternal(Container child) {
+
+        if (log.isDebugEnabled()) {
+            log.debug("Add child " + child + " " + this);
+        }
+
+        synchronized(children) {
+            if (children.get(child.getName()) != null) {
+                throw new IllegalArgumentException(
+                        sm.getString("containerBase.child.notUnique", child.getName()));
+            }
+            child.setParent(this);  // May throw IAE
+            children.put(child.getName(), child);
+        }
+
+        fireContainerEvent(ADD_CHILD_EVENT, child);
+
+        // Start child
+        // Don't do this inside sync block - start can be a slow process and
+        // locking the children object can cause problems elsewhere
+        try {
+            if ((getState().isAvailable() ||
+                    LifecycleState.STARTING_PREP.equals(getState())) &&
+                    startChildren) {
+                child.start();
+            }
+        } catch (LifecycleException e) {
+            throw new IllegalStateException(sm.getString("containerBase.child.start"), e);
+        }
+    }
 
     /**
      * The Realm with which this Container is associated.
@@ -105,10 +206,68 @@ public class ContainerBase extends LifecycleMBeanBase implements Container {
         support.firePropertyChange("name", oldName, this.name);
     }
 
+
+    /**
+     * Return the parent class loader (if any) for this web application.
+     * This call is meaningful only <strong>after</strong> a Loader has
+     * been configured.
+     */
+    @Override
+    public ClassLoader getParentClassLoader() {
+        if (parentClassLoader != null) {
+            return parentClassLoader;
+        }
+        if (parent != null) {
+            return parent.getParentClassLoader();
+        }
+        return ClassLoader.getSystemClassLoader();
+    }
+
+
     @Override
     public String getName() {
         return null;
     }
+
+    /**
+     * Return the Logger for this Container.
+     */
+    @Override
+    public Log getLogger() {
+        if (logger != null) {
+            return logger;
+        }
+        logger = LogFactory.getLog(getLogName());
+        return logger;
+    }
+
+    /**
+     * @return the abbreviated name of this container for logging messages
+     */
+    @Override
+    public String getLogName() {
+
+        if (logName != null) {
+            return logName;
+        }
+        String loggerName = null;
+        Container current = this;
+        while (current != null) {
+            String name = current.getName();
+            if ((name == null) || (name.equals(""))) {
+                name = "/";
+            } else if (name.startsWith("##")) {
+                name = "/" + name;
+            }
+            loggerName = "[" + name + "]"
+                    + ((loggerName != null) ? ("." + loggerName) : "");
+            current = current.getParent();
+        }
+        logName = ContainerBase.class.getName() + "." + loggerName;
+        return logName;
+
+    }
+
 
     @Override
     protected void destroyInternal() throws LifecycleException {
@@ -321,4 +480,114 @@ public class ContainerBase extends LifecycleMBeanBase implements Container {
     protected String getDomainInternal() {
         return null;
     }
+
+    @Override
+    public String getMBeanKeyProperties() {
+        Container c = this;
+        StringBuilder keyProperties = new StringBuilder();
+        int containerCount = 0;
+
+        // Work up container hierarchy, add a component to the name for
+        // each container
+        while (!(c instanceof Engine)) {
+            if (c instanceof Wrapper) {
+                keyProperties.insert(0, ",servlet=");
+                keyProperties.insert(9, c.getName());
+            } else if (c instanceof Context) {
+                keyProperties.insert(0, ",context=");
+                ContextName cn = new ContextName(c.getName(), false);
+                keyProperties.insert(9,cn.getDisplayName());
+            } else if (c instanceof Host) {
+                keyProperties.insert(0, ",host=");
+                keyProperties.insert(6, c.getName());
+            } else if (c == null) {
+                // May happen in unit testing and/or some embedding scenarios
+                keyProperties.append(",container");
+                keyProperties.append(containerCount++);
+                keyProperties.append("=null");
+                break;
+            } else {
+                // Should never happen...
+                keyProperties.append(",container");
+                keyProperties.append(containerCount++);
+                keyProperties.append('=');
+                keyProperties.append(c.getName());
+            }
+            c = c.getParent();
+        }
+        return keyProperties.toString();
+    }
+
+    /**
+     * Return the Pipeline object that manages the Valves associated with
+     * this Container.
+     */
+    @Override
+    public Pipeline getPipeline() {
+        return this.pipeline;
+    }
+
+    /**
+     * Return the Container for which this Container is a child, if there is
+     * one.  If there is no defined parent, return <code>null</code>.
+     */
+    @Override
+    public Container getParent() {
+        return parent;
+    }
+
+    @Override
+    public File getCatalinaBase() {
+
+        if (parent == null) {
+            return null;
+        }
+
+        return parent.getCatalinaBase();
+    }
+
+    /**
+     * Set the parent Container to which this Container is being added as a
+     * child.  This Container may refuse to become attached to the specified
+     * Container by throwing an exception.
+     *
+     * @param container Container to which this Container is being added
+     *  as a child
+     *
+     * @exception IllegalArgumentException if this Container refuses to become
+     *  attached to the specified Container
+     */
+    @Override
+    public void setParent(Container container) {
+
+        Container oldParent = this.parent;
+        this.parent = container;
+        support.firePropertyChange("parent", oldParent, this.parent);
+
+    }
+
+
+    /**
+     * Perform addChild with the permissions of this class.
+     * addChild can be called with the XML parser on the stack,
+     * this allows the XML parser to have fewer privileges than
+     * Tomcat.
+     */
+    protected class PrivilegedAddChild implements PrivilegedAction<Void> {
+
+        private final Container child;
+
+        PrivilegedAddChild(Container child) {
+            this.child = child;
+        }
+
+        @Override
+        public Void run() {
+            addChildInternal(child);
+            return null;
+        }
+
+    }
+
+
 }

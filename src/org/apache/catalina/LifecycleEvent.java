@@ -30,4 +30,20 @@ public class LifecycleEvent extends EventObject {
         this.type = type;
         this.data = data;
     }
+
+    /**
+     * @return the Lifecycle on which this event occurred.
+     */
+    public Lifecycle getLifecycle() {
+        return (Lifecycle) getSource();
+    }
+
+
+    /**
+     * @return the event type of this event.
+     */
+    public String getType() {
+        return this.type;
+    }
+
 }

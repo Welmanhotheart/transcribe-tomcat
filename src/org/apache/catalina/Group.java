@@ -28,4 +28,23 @@ import java.util.Iterator;
  * @since 4.1
  */
 public interface Group extends Principal {
+    /**
+     * @return the group name of this group, which must be unique
+     * within the scope of a {@link UserDatabase}.
+     */
+    public String getGroupname();
+
+
+    /**
+     * Set the group name of this group, which must be unique
+     * within the scope of a {@link UserDatabase}.
+     *
+     * @param groupname The new group name
+     */
+    public void setGroupname(String groupname);
+
+    /**
+     * @return the {@link UserDatabase} within which this Group is defined.
+     */
+    public UserDatabase getUserDatabase();
 }

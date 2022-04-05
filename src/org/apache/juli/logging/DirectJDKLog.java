@@ -77,4 +77,14 @@ public class DirectJDKLog implements Log{
     public void trace(Object message, Throwable t) {
 
     }
+
+    @Override
+    public void fatal(Object message) {
+
+    }
+
+    @Override
+    public void fatal(Object message, Throwable t) {
+
+    }
 }

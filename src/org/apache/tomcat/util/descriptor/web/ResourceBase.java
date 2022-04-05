@@ -14,8 +14,36 @@ public class ResourceBase implements Serializable, Injectable {
 
     }
 
+    /**
+     * The name of the resource implementation class.
+     */
+    private String type = null;
+
+    public String getType() {
+        return this.type;
+    }
+
+    public void setType(String type) {
+        this.type = type;
+    }
+
+
     @Override
     public List<InjectionTarget> getInjectionTargets() {
         return null;
+    }
+
+
+    /**
+     * The NamingResources with which we are associated (if any).
+     */
+    private NamingResources resources = null;
+
+    public NamingResources getNamingResources() {
+        return this.resources;
+    }
+
+    public void setNamingResources(NamingResources resources) {
+        this.resources = resources;
     }
 }
