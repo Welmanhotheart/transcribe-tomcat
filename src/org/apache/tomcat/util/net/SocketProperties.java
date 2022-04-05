@@ -1,5 +1,7 @@
 package org.apache.tomcat.util.net;
 
+import javax.management.ObjectName;
+
 public class SocketProperties {
 
 
@@ -25,7 +27,7 @@ public class SocketProperties {
      * SO_TIMEOUT option. default is 20000.
      */
     protected Integer soTimeout = Integer.valueOf(20000);
-
+    private ObjectName oname = null;
 
     public void setSoLingerTime(int soLingerTime) {
         this.soLingerTime = Integer.valueOf(soLingerTime);
@@ -47,4 +49,11 @@ public class SocketProperties {
         this.soTimeout = Integer.valueOf(soTimeout);
     }
 
+    void setObjectName(ObjectName oname) {
+        this.oname = oname;
+    }
+
+    ObjectName getObjectName() {
+        return oname;
+    }
 }

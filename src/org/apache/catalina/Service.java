@@ -18,6 +18,12 @@ public interface Service extends Lifecycle {
      */
     public ClassLoader getParentClassLoader();
 
+    /**
+     * Retrieves all executors
+     * @return Executor[]
+     */
+    public Executor[] findExecutors();
+
 
     /**
      * @return the domain under which this container will be / has been

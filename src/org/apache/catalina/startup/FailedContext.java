@@ -39,6 +39,11 @@ public class FailedContext  extends LifecycleMBeanBase implements Context {
     }
 
     @Override
+    public Realm getRealm() {
+        return null;
+    }
+
+    @Override
     public void removeChild(Container child) {
 
     }

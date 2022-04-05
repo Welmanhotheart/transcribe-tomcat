@@ -1,6 +1,7 @@
 package org.apache.catalina.core;
 
 import org.apache.catalina.*;
+import org.apache.catalina.realm.NullRealm;
 import org.apache.juli.logging.Log;
 
 import java.io.File;
@@ -41,6 +42,41 @@ public class StandardEngine extends ContainerBase implements Engine {
         support.firePropertyChange("defaultHost", oldDefaultHost,
                 this.defaultHost);
 
+    }
+
+    @Override
+    protected void initInternal() throws LifecycleException {
+        // Ensure that a Realm is present before any attempt is made to start
+        // one. This will create the default NullRealm if necessary.
+        getRealm();
+        super.initInternal();
+    }
+
+
+    // -------------------- JMX registration  --------------------
+
+    @Override
+    protected String getObjectNameKeyProperties() {
+        return "type=Engine";
+    }
+
+
+    /**
+     * Obtain the configured Realm and provide a default Realm implementation
+     * when no explicit configuration is set.
+     *
+     * @return configured realm, or a {@link NullRealm} by default
+     */
+    @Override
+    public Realm getRealm() {
+        Realm configured = super.getRealm();
+        // If no set realm has been called - default to NullRealm
+        // This can be overridden at engine, context and host level
+        if (configured == null) {
+            configured = new NullRealm();
+            this.setRealm(configured);
+        }
+        return configured;
     }
 
     @Override

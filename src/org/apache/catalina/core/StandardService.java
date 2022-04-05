@@ -57,13 +57,72 @@ public class StandardService extends LifecycleMBeanBase implements Service {
 
 
     @Override
-    protected String getObjectNameKeyProperties() {
-        return null;
+    public final String getObjectNameKeyProperties() {
+        return "type=Service";
     }
-
     @Override
     protected String getDomainInternal() {
-        return null;
+        String domain = null;
+        Container engine = getContainer();
+
+        // Use the engine name first
+        if (engine != null) {
+            domain = engine.getName();
+        }
+
+        // No engine or no engine name, use the service name
+        if (domain == null) {
+            domain = getName();
+        }
+
+        // No service name, return null which will trigger the use of the
+        // default
+        return domain;
+    }
+
+    /**
+     * Invoke a pre-startup initialization. This is used to allow connectors
+     * to bind to restricted ports under Unix operating environments.
+     */
+    @Override
+    protected void initInternal() throws LifecycleException {
+
+        super.initInternal();
+
+        if (engine != null) {
+            engine.init();
+        }
+
+        // Initialize any Executors
+        for (Executor executor : findExecutors()) {
+            if (executor instanceof JmxEnabled) {
+                ((JmxEnabled) executor).setDomain(getDomain());
+            }
+            executor.init();
+        }
+
+        // Initialize mapper listener
+        mapperListener.init();
+
+        // Initialize our defined Connectors
+        synchronized (connectorsLock) {
+            for (Connector connector : connectors) {
+                connector.init();
+            }
+        }
+    }
+
+    /**
+     * Retrieves all executors
+     * @return Executor[]
+     */
+    @Override
+    public Executor[] findExecutors() {
+        synchronized (executors) {
+            Executor[] arr = new Executor[executors.size()];
+            executors.toArray(arr);
+            return arr;
+        }
     }
 
     /**
@@ -223,4 +282,6 @@ public class StandardService extends LifecycleMBeanBase implements Service {
     protected void startInternal() throws LifecycleException {
 
     }
+
+
 }

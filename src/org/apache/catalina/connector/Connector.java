@@ -2,19 +2,30 @@ package org.apache.catalina.connector;
 
 import org.apache.catalina.LifecycleException;
 import org.apache.catalina.Service;
+import org.apache.catalina.core.AprStatus;
 import org.apache.catalina.util.LifecycleMBeanBase;
 import org.apache.coyote.AbstractProtocol;
+import org.apache.coyote.Adapter;
 import org.apache.coyote.ProtocolHandler;
+import org.apache.coyote.http11.AbstractHttp11JsseProtocol;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.util.IntrospectionUtils;
+import org.apache.tomcat.util.net.openssl.OpenSSLImplementation;
 import org.apache.tomcat.util.res.StringManager;
 
 import javax.management.ObjectName;
 import java.net.InetAddress;
+import java.util.Arrays;
+import java.util.HashSet;
 
 public class Connector extends LifecycleMBeanBase {
     private static final Log log = LogFactory.getLog(Connector.class);
+
+    /**
+     * Coyote adapter.
+     */
+    protected Adapter adapter = null;
 
     public static final String INTERNAL_EXECUTOR_NAME = "Internal";
 
@@ -42,7 +53,16 @@ public class Connector extends LifecycleMBeanBase {
      */
     protected final ProtocolHandler protocolHandler;
 
+    /**
+     * A Set of methods determined by {@link #parseBodyMethods}.
+     */
+    protected HashSet<String> parseBodyMethodsSet;
 
+    /**
+     * Comma-separated list of HTTP methods that will be parsed according
+     * to POST-style rules for application/x-www-form-urlencoded request bodies.
+     */
+    protected String parseBodyMethods = "POST";
     /**
      * The <code>Service</code> we are associated with (if any).
      */
@@ -192,6 +212,85 @@ public class Connector extends LifecycleMBeanBase {
         // Usually means an invalid protocol has been configured.
         return 0;
     }
+
+    @Override
+    protected void initInternal() throws LifecycleException {
+
+        super.initInternal();
+
+        if (protocolHandler == null) {
+            throw new LifecycleException(
+                    sm.getString("coyoteConnector.protocolHandlerInstantiationFailed"));
+        }
+
+        // Initialize adapter
+        adapter = new CoyoteAdapter(this);
+        protocolHandler.setAdapter(adapter);
+        if (service != null) {
+            protocolHandler.setUtilityExecutor(service.getServer().getUtilityExecutor());
+        }
+
+        // Make sure parseBodyMethodsSet has a default
+        if (null == parseBodyMethodsSet) {
+            setParseBodyMethods(getParseBodyMethods());
+        }
+
+        if (AprStatus.isAprAvailable() && AprStatus.getUseOpenSSL() &&
+                protocolHandler instanceof AbstractHttp11JsseProtocol) {
+            AbstractHttp11JsseProtocol<?> jsseProtocolHandler =
+                    (AbstractHttp11JsseProtocol<?>) protocolHandler;
+            if (jsseProtocolHandler.isSSLEnabled() &&
+                    jsseProtocolHandler.getSslImplementationName() == null) {
+                // OpenSSL is compatible with the JSSE configuration, so use it if APR is available
+                jsseProtocolHandler.setSslImplementationName(OpenSSLImplementation.class.getName());
+            }
+        }
+
+        try {
+            protocolHandler.init();
+        } catch (Exception e) {
+            throw new LifecycleException(
+                    sm.getString("coyoteConnector.protocolHandlerInitializationFailed"), e);
+        }
+    }
+
+
+    /**
+     * @return the HTTP methods which will support body parameters parsing
+     */
+    public String getParseBodyMethods() {
+        return this.parseBodyMethods;
+    }
+
+
+    /**
+     * Set list of HTTP methods which should allow body parameter
+     * parsing. This defaults to <code>POST</code>.
+     *
+     * @param methods Comma separated list of HTTP method names
+     */
+    public void setParseBodyMethods(String methods) {
+
+        HashSet<String> methodSet = new HashSet<>();
+
+        if (null != methods) {
+            methodSet.addAll(Arrays.asList(methods.split("\\s*,\\s*")));
+        }
+
+        if (methodSet.contains("TRACE")) {
+            throw new IllegalArgumentException(sm.getString("coyoteConnector.parseBodyMethodNoTrace"));
+        }
+
+        this.parseBodyMethods = methods;
+        this.parseBodyMethodsSet = methodSet;
+    }
+
+
+    protected boolean isParseBodyMethod(String method) {
+        return parseBodyMethodsSet.contains(method);
+    }
+
+
 
 
     protected String createObjectNameKeyProperties(String type) {

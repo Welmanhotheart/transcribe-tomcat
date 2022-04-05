@@ -1,8 +1,11 @@
 package org.apache.tomcat.util.modeler;
 
+import org.apache.tomcat.util.buf.StringUtils;
 import org.apache.tomcat.util.res.StringManager;
 
 import javax.management.*;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -24,8 +27,22 @@ public class ManagedBean implements java.io.Serializable{
      */
     private transient volatile MBeanInfo info = null;
 
+    private Map<String,AttributeInfo> attributes = new HashMap<>();
+    private Map<String,OperationInfo> operations = new HashMap<>();
+
+    private NotificationInfo notifications[] = new NotificationInfo[0];
 
     private final ReadWriteLock mBeanInfoLock = new ReentrantReadWriteLock();
+
+    private String createOperationKey(OperationInfo operation) {
+        StringBuilder key = new StringBuilder(operation.getName());
+        key.append('(');
+        StringUtils.join(operation.getSignature(), ',', FeatureInfo::getType, key);
+        key.append(')');
+
+        return key.toString().intern();
+    }
+
     /**
      * Create and return a <code>ModelMBean</code> that has been
      * preconfigured with the <code>ModelMBeanInfo</code> information
@@ -114,6 +131,13 @@ public class ManagedBean implements java.io.Serializable{
     }
 
     /**
+     * @return the collection of notifications for this MBean.
+     */
+    public NotificationInfo[] getNotifications() {
+        return this.notifications;
+    }
+
+    /**
      * @return the name of this managed bean, which must be unique
      *  among all MBeans managed by a particular MBeans server.
      */
@@ -131,6 +155,22 @@ public class ManagedBean implements java.io.Serializable{
         }
     }
 
+    /**
+     * Add a new attribute to the set of attributes for this MBean.
+     *
+     * @param attribute The new attribute descriptor
+     */
+    public void addAttribute(AttributeInfo attribute) {
+        attributes.put(attribute.getName(), attribute);
+    }
+    /**
+     * Add a new operation to the set of operations for this MBean.
+     *
+     * @param operation The new operation descriptor
+     */
+    public void addOperation(OperationInfo operation) {
+        operations.put(createOperationKey(operation), operation);
+    }
 
     /**
      * @return the fully qualified name of the Java class of the resource
@@ -149,8 +189,104 @@ public class ManagedBean implements java.io.Serializable{
         return this.domain;
     }
 
+    /**
+     * @return the collection of operations for this MBean.
+     */
+    public OperationInfo[] getOperations() {
+        OperationInfo[] result = new OperationInfo[operations.size()];
+        operations.values().toArray(result);
+        return result;
+    }
+
+    /**
+     * @return the collection of attributes for this MBean.
+     */
+    public AttributeInfo[] getAttributes() {
+        AttributeInfo result[] = new AttributeInfo[attributes.size()];
+        attributes.values().toArray(result);
+        return result;
+    }
+
+
+    /**
+     * Create and return a <code>ModelMBeanInfo</code> object that
+     * describes this entire managed bean.
+     * @return the MBean info
+     */
+    MBeanInfo getMBeanInfo() {
+
+        // Return our cached information (if any)
+        mBeanInfoLock.readLock().lock();
+        try {
+            if (info != null) {
+                return info;
+            }
+        } finally {
+            mBeanInfoLock.readLock().unlock();
+        }
+
+        mBeanInfoLock.writeLock().lock();
+        try {
+            if (info == null) {
+                // Create subordinate information descriptors as required
+                AttributeInfo attrs[] = getAttributes();
+                MBeanAttributeInfo attributes[] =
+                        new MBeanAttributeInfo[attrs.length];
+                for (int i = 0; i < attrs.length; i++) {
+                    attributes[i] = attrs[i].createAttributeInfo();
+                }
+
+                OperationInfo opers[] = getOperations();
+                MBeanOperationInfo operations[] =
+                        new MBeanOperationInfo[opers.length];
+                for (int i = 0; i < opers.length; i++) {
+                    operations[i] = opers[i].createOperationInfo();
+                }
+
+
+                NotificationInfo notifs[] = getNotifications();
+                MBeanNotificationInfo notifications[] =
+                        new MBeanNotificationInfo[notifs.length];
+                for (int i = 0; i < notifs.length; i++) {
+                    notifications[i] = notifs[i].createNotificationInfo();
+                }
+
+
+                // Construct and return a new ModelMBeanInfo object
+                info = new MBeanInfo(getClassName(),
+                        getDescription(),
+                        attributes,
+                        new MBeanConstructorInfo[] {},
+                        operations,
+                        notifications);
+            }
+
+            return info;
+        } finally {
+            mBeanInfoLock.writeLock().unlock();
+        }
+    }
+
     public void setDomain(String domain) {
         this.domain = domain;
+    }
+
+
+    /**
+     * @return the human-readable description of this MBean.
+     */
+    public String getDescription() {
+        return this.description;
+    }
+
+    public void setDescription(String description) {
+        mBeanInfoLock.writeLock().lock();
+        try {
+            this.description = description;
+            this.info = null;
+        } finally {
+            mBeanInfoLock.writeLock().unlock();
+        }
     }
 
 

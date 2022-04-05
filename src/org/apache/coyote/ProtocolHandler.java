@@ -1,8 +1,39 @@
 package org.apache.coyote;
 
 import java.lang.reflect.InvocationTargetException;
+import java.util.concurrent.ScheduledExecutorService;
 
 public interface ProtocolHandler {
+
+
+    /**
+     * Get the utility executor that should be used by the protocol handler.
+     * @return the executor
+     */
+    public ScheduledExecutorService getUtilityExecutor();
+
+
+    /**
+     * Set the utility executor that should be used by the protocol handler.
+     * @param utilityExecutor the executor
+     */
+    public void setUtilityExecutor(ScheduledExecutorService utilityExecutor);
+
+
+    /**
+     * Return the adapter associated with the protocol handler.
+     * @return the adapter
+     */
+    public Adapter getAdapter();
+
+
+    /**
+     * The adapter, used to call the connector.
+     *
+     * @param adapter The adapter to associate
+     */
+    public void setAdapter(Adapter adapter);
+
 
     /**
      * Create a new ProtocolHandler for the given protocol.
@@ -41,5 +72,12 @@ public interface ProtocolHandler {
     public default String getId() {
         return null;
     }
+
+    /**
+     * Initialise the protocol.
+     *
+     * @throws Exception If the protocol handler fails to initialise
+     */
+    public void init() throws Exception;
 
 }

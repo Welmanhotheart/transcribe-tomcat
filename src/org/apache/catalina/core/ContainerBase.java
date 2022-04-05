@@ -481,6 +481,30 @@ public abstract class ContainerBase extends LifecycleMBeanBase implements Contai
         return null;
     }
 
+    /**
+     * Return the Realm with which this Container is associated.  If there is
+     * no associated Realm, return the Realm associated with our parent
+     * Container (if any); otherwise return <code>null</code>.
+     */
+    @Override
+    public Realm getRealm() {
+
+        Lock l = realmLock.readLock();
+        l.lock();
+        try {
+            if (realm != null) {
+                return realm;
+            }
+            if (parent != null) {
+                return parent.getRealm();
+            }
+            return null;
+        } finally {
+            l.unlock();
+        }
+    }
+
+
     @Override
     public String getMBeanKeyProperties() {
         Container c = this;

@@ -34,6 +34,16 @@ public abstract class LifecycleMBeanBase extends LifecycleBase  implements JmxEn
     }
 
     /**
+     * Specify the domain under which this component should be registered. Used
+     * with components that cannot (easily) navigate the component hierarchy to
+     * determine the correct domain to use.
+     */
+    @Override
+    public final void setDomain(String domain) {
+        this.domain = domain;
+    }
+
+    /**
      * Allow sub-classes to specify the key properties component of the
      * {@link ObjectName} that will be used to register this component.
      *

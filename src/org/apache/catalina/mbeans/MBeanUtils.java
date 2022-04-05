@@ -2,7 +2,9 @@ package org.apache.catalina.mbeans;
 
 import org.apache.catalina.*;
 import org.apache.catalina.util.ContextName;
+import org.apache.tomcat.util.descriptor.web.ContextEnvironment;
 import org.apache.tomcat.util.descriptor.web.ContextResource;
+import org.apache.tomcat.util.descriptor.web.ContextResourceLink;
 import org.apache.tomcat.util.modeler.ManagedBean;
 import org.apache.tomcat.util.modeler.Registry;
 import org.apache.tomcat.util.res.StringManager;
@@ -117,6 +119,37 @@ public class MBeanUtils {
 
     /**
      * Create, register, and return an MBean for this
+     * <code>ContextEnvironment</code> object.
+     *
+     * @param environment The ContextEnvironment to be managed
+     * @return a new MBean
+     * @exception Exception if an MBean cannot be created or registered
+     */
+    public static DynamicMBean createMBean(ContextEnvironment environment)
+            throws Exception {
+
+        String mname = createManagedName(environment);
+        ManagedBean managed = registry.findManagedBean(mname);
+        if (managed == null) {
+            Exception e = new Exception(sm.getString("mBeanUtils.noManagedBean", mname));
+            throw new MBeanException(e);
+        }
+        String domain = managed.getDomain();
+        if (domain == null) {
+            domain = mserver.getDefaultDomain();
+        }
+        DynamicMBean mbean = managed.createMBean(environment);
+        ObjectName oname = createObjectName(domain, environment);
+        if( mserver.isRegistered( oname ))  {
+            mserver.unregisterMBean(oname);
+        }
+        mserver.registerMBean(mbean, oname);
+        return mbean;
+
+    }
+
+    /**
+     * Create, register, and return an MBean for this
      * <code>ContextResource</code> object.
      *
      * @param resource The ContextResource to be managed
@@ -145,6 +178,107 @@ public class MBeanUtils {
         return mbean;
 
     }
+
+    /**
+     * Create, register, and return an MBean for this
+     * <code>ContextResourceLink</code> object.
+     *
+     * @param resourceLink The ContextResourceLink to be managed
+     * @return a new MBean
+     * @exception Exception if an MBean cannot be created or registered
+     */
+    public static DynamicMBean createMBean(ContextResourceLink resourceLink)
+            throws Exception {
+
+        String mname = createManagedName(resourceLink);
+        ManagedBean managed = registry.findManagedBean(mname);
+        if (managed == null) {
+            Exception e = new Exception(sm.getString("mBeanUtils.noManagedBean", mname));
+            throw new MBeanException(e);
+        }
+        String domain = managed.getDomain();
+        if (domain == null) {
+            domain = mserver.getDefaultDomain();
+        }
+        DynamicMBean mbean = managed.createMBean(resourceLink);
+        ObjectName oname = createObjectName(domain, resourceLink);
+        if( mserver.isRegistered( oname ))  {
+            mserver.unregisterMBean(oname);
+        }
+        mserver.registerMBean(mbean, oname);
+        return mbean;
+
+    }
+
+    /**
+     * Create an <code>ObjectName</code> for this
+     * <code>ContextResourceLink</code> object.
+     *
+     * @param domain Domain in which this name is to be created
+     * @param resourceLink The ContextResourceLink to be named
+     * @return a new object name
+     * @exception MalformedObjectNameException if a name cannot be created
+     */
+    public static ObjectName createObjectName(String domain,
+                                              ContextResourceLink resourceLink)
+            throws MalformedObjectNameException {
+
+        ObjectName name = null;
+        String quotedResourceLinkName
+                = ObjectName.quote(resourceLink.getName());
+        Object container =
+                resourceLink.getNamingResources().getContainer();
+        if (container instanceof Server) {
+            name = new ObjectName(domain + ":type=ResourceLink" +
+                    ",resourcetype=Global" +
+                    ",name=" + quotedResourceLinkName);
+        } else if (container instanceof Context) {
+            Context context = ((Context)container);
+            ContextName cn = new ContextName(context.getName(), false);
+            Container host = context.getParent();
+            name = new ObjectName(domain + ":type=ResourceLink" +
+                    ",resourcetype=Context,host=" + host.getName() +
+                    ",context=" + cn.getDisplayName() +
+                    ",name=" + quotedResourceLinkName);
+        }
+
+        return name;
+
+    }
+
+
+    /**
+     * Create an <code>ObjectName</code> for this
+     * <code>Service</code> object.
+     *
+     * @param domain Domain in which this name is to be created
+     * @param environment The ContextEnvironment to be named
+     * @return a new object name
+     * @exception MalformedObjectNameException if a name cannot be created
+     */
+    public static ObjectName createObjectName(String domain,
+                                              ContextEnvironment environment)
+            throws MalformedObjectNameException {
+
+        ObjectName name = null;
+        Object container =
+                environment.getNamingResources().getContainer();
+        if (container instanceof Server) {
+            name = new ObjectName(domain + ":type=Environment" +
+                    ",resourcetype=Global,name=" + environment.getName());
+        } else if (container instanceof Context) {
+            Context context = ((Context)container);
+            ContextName cn = new ContextName(context.getName(), false);
+            Container host = context.getParent();
+            name = new ObjectName(domain + ":type=Environment" +
+                    ",resourcetype=Context,host=" + host.getName() +
+                    ",context=" + cn.getDisplayName() +
+                    ",name=" + environment.getName());
+        }
+        return name;
+
+    }
+
 
 
     /**

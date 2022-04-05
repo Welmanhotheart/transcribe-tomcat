@@ -4,10 +4,20 @@ import java.io.Serializable;
 import java.util.List;
 
 public class ResourceBase implements Serializable, Injectable {
+    /**
+     * The name of this resource.
+     */
+    private String name = null;
+
     @Override
     public String getName() {
-        return null;
+        return this.name;
     }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
 
     @Override
     public void addInjectionTarget(String injectionTargetName, String jndiName) {

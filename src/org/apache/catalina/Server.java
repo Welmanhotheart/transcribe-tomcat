@@ -4,6 +4,7 @@ import org.apache.catalina.deploy.NamingResourcesImpl;
 import org.apache.catalina.startup.Catalina;
 
 import java.io.File;
+import java.util.concurrent.ScheduledExecutorService;
 
 public interface Server extends Lifecycle{
 
@@ -25,6 +26,11 @@ public interface Server extends Lifecycle{
      */
     public int getPortOffset();
 
+
+    /**
+     * @return the utility executor managed by the Service.
+     */
+    public ScheduledExecutorService getUtilityExecutor();
 
     /**
      * Set the shutdown command we are waiting for.

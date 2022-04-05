@@ -20,5 +20,7 @@ public class AprStatus {
     public static boolean isAprAvailable() {
         return aprAvailable;
     }
-
+    public static boolean getUseOpenSSL() {
+        return useOpenSSL;
+    }
 }

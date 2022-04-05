@@ -71,6 +71,16 @@ public interface Container extends Lifecycle{
      */
     public String getName();
 
+    /**
+     * Obtain the Realm with which this Container is associated.
+     *
+     * @return The associated Realm; if there is no associated Realm, the
+     *         Realm associated with the parent Container (if any); otherwise
+     *         return <code>null</code>.
+     */
+    public Realm getRealm();
+
+
 
     /**
      * Remove an existing child Container from association with this parent

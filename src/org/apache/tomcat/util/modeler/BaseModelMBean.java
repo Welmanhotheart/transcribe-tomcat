@@ -28,7 +28,9 @@ public class BaseModelMBean  implements DynamicMBean, MBeanRegistration,
 
     protected String resourceType = null;
 
+    // ----------------------------------------------------- Instance Variables
 
+    protected ObjectName oname=null;
 
 
     public void setManagedBean(ManagedBean managedBean) {
@@ -90,15 +92,33 @@ public class BaseModelMBean  implements DynamicMBean, MBeanRegistration,
         return null;
     }
 
+    /**
+     * Return the <code>MBeanInfo</code> object for this MBean.
+     */
     @Override
     public MBeanInfo getMBeanInfo() {
-        return null;
+        return managedBean.getMBeanInfo();
     }
 
+    // -------------------- Registration  --------------------
+    // XXX We can add some method patterns here- like setName() and
+    // setDomain() for code that doesn't implement the Registration
+
     @Override
-    public ObjectName preRegister(MBeanServer server, ObjectName name) throws Exception {
-        return null;
+    public ObjectName preRegister(MBeanServer server,
+                                  ObjectName name)
+            throws Exception
+    {
+        if( log.isDebugEnabled()) {
+            log.debug("preRegister " + resource + " " + name );
+        }
+        oname=name;
+        if( resource instanceof MBeanRegistration ) {
+            oname = ((MBeanRegistration)resource).preRegister(server, name );
+        }
+        return oname;
     }
+
 
     @Override
     public void postRegister(Boolean registrationDone) {

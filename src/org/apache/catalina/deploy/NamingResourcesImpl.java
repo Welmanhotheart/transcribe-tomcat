@@ -1,16 +1,15 @@
 package org.apache.catalina.deploy;
 
+import org.apache.catalina.Container;
 import org.apache.catalina.Context;
+import org.apache.catalina.JmxEnabled;
 import org.apache.catalina.LifecycleException;
 import org.apache.catalina.mbeans.MBeanUtils;
 import org.apache.catalina.util.Introspection;
 import org.apache.catalina.util.LifecycleMBeanBase;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
-import org.apache.tomcat.util.descriptor.web.ContextResource;
-import org.apache.tomcat.util.descriptor.web.InjectionTarget;
-import org.apache.tomcat.util.descriptor.web.NamingResources;
-import org.apache.tomcat.util.descriptor.web.ResourceBase;
+import org.apache.tomcat.util.descriptor.web.*;
 import org.apache.tomcat.util.res.StringManager;
 
 import javax.management.MBeanServer;
@@ -21,6 +20,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 public class NamingResourcesImpl extends LifecycleMBeanBase
@@ -59,6 +59,18 @@ public class NamingResourcesImpl extends LifecycleMBeanBase
     private volatile boolean resourceRequireExplicitRegistration = false;
 
     /**
+     * The environment entries for this web application, keyed by name.
+     */
+    private final Map<String, ContextEnvironment> envs = new HashMap<>();
+
+    /**
+     * The resource links for this web application, keyed by name.
+     */
+    private final HashMap<String, ContextResourceLink> resourceLinks =
+            new HashMap<>();
+
+
+    /**
      * @return the container with which the naming resources are associated.
      */
     @Override
@@ -77,6 +89,42 @@ public class NamingResourcesImpl extends LifecycleMBeanBase
             }
         }
         return null;
+    }
+
+    @Override
+    protected void initInternal() throws LifecycleException {
+        super.initInternal();
+
+        // Set this before we register currently known naming resources to avoid
+        // timing issues. Duplication registration is not an issue.
+        resourceRequireExplicitRegistration = true;
+
+        for (ContextResource cr : resources.values()) {
+            try {
+                MBeanUtils.createMBean(cr);
+            } catch (Exception e) {
+                log.warn(sm.getString(
+                        "namingResources.mbeanCreateFail", cr.getName()), e);
+            }
+        }
+
+        for (ContextEnvironment ce : envs.values()) {
+            try {
+                MBeanUtils.createMBean(ce);
+            } catch (Exception e) {
+                log.warn(sm.getString(
+                        "namingResources.mbeanCreateFail", ce.getName()), e);
+            }
+        }
+
+        for (ContextResourceLink crl : resourceLinks.values()) {
+            try {
+                MBeanUtils.createMBean(crl);
+            } catch (Exception e) {
+                log.warn(sm.getString(
+                        "namingResources.mbeanCreateFail", crl.getName()), e);
+            }
+        }
     }
 
 
@@ -234,14 +282,26 @@ public class NamingResourcesImpl extends LifecycleMBeanBase
 
     @Override
     protected String getObjectNameKeyProperties() {
-        return null;
+        Object c = getContainer();
+        if (c instanceof Container) {
+            return "type=NamingResources" +
+                    ((Container) c).getMBeanKeyProperties();
+        }
+        // Server or just unknown
+        return "type=NamingResources";
     }
 
     @Override
     protected String getDomainInternal() {
+        // Use the same domain as our associated container if we have one
+        Object c = getContainer();
+
+        if (c instanceof JmxEnabled) {
+            return ((JmxEnabled) c).getDomain();
+        }
+
         return null;
     }
-
     /**
      * Set the container with which the naming resources are associated.
      * @param container the associated with the resources
