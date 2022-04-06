@@ -10,6 +10,7 @@ import javax.management.MBeanServer;
 import javax.management.MalformedObjectNameException;
 import javax.management.ObjectName;
 import java.net.InetAddress;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -56,6 +57,27 @@ public abstract class AbstractProtocol<S> implements ProtocolHandler,
         return domain;
     }
 
+    protected void setHandler(AbstractEndpoint.Handler<S> handler) {
+        this.handler = handler;
+    }
+
+    @Override
+    public ScheduledExecutorService getUtilityExecutor() { return endpoint.getUtilityExecutor(); }
+
+    @Override
+    public void setUtilityExecutor(ScheduledExecutorService utilityExecutor) {
+        endpoint.setUtilityExecutor(utilityExecutor);
+    }
+
+    /**
+     * The adapter provides the link between the ProtocolHandler and the
+     * connector.
+     */
+    protected Adapter adapter;
+    @Override
+    public void setAdapter(Adapter adapter) { this.adapter = adapter; }
+    @Override
+    public Adapter getAdapter() { return adapter; }
 
     /**
      * Controller for the timeout scheduling.

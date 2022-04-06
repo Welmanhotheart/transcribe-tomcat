@@ -19,6 +19,17 @@ public interface ProtocolHandler {
      */
     public void setUtilityExecutor(ScheduledExecutorService utilityExecutor);
 
+    /**
+     * Add a new protocol for used by HTTP/1.1 upgrade or ALPN.
+     * @param upgradeProtocol the protocol
+     */
+    public void addUpgradeProtocol(UpgradeProtocol upgradeProtocol);
+
+    /**
+     * Return all configured upgrade protocols.
+     * @return the protocols
+     */
+    public UpgradeProtocol[] findUpgradeProtocols();
 
     /**
      * Return the adapter associated with the protocol handler.

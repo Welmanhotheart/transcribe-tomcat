@@ -1,6 +1,7 @@
 package org.apache.tomcat.util.net;
 
 import org.apache.juli.logging.Log;
+import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.util.ExceptionUtils;
 import org.apache.tomcat.util.modeler.Registry;
 import org.apache.tomcat.util.res.StringManager;
@@ -10,14 +11,20 @@ import javax.management.ObjectName;
 import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 
 public abstract class AbstractEndpoint<S,U> {
     // -------------------------------------------------------------- Constants
 
     protected static final StringManager sm = StringManager.getManager(AbstractEndpoint.class);
+
+
 
     private int portOffset = 0;
 
@@ -48,6 +55,30 @@ public abstract class AbstractEndpoint<S,U> {
     private InetAddress address;
     public InetAddress getAddress() { return address; }
     public void setAddress(InetAddress address) { this.address = address; }
+
+    /**
+     * External Executor based thread pool for utility tasks.
+     */
+    private ScheduledExecutorService utilityExecutor = null;
+    public void setUtilityExecutor(ScheduledExecutorService utilityExecutor) {
+        this.utilityExecutor = utilityExecutor;
+    }
+    public ScheduledExecutorService getUtilityExecutor() {
+        if (utilityExecutor == null) {
+            getLog().warn(sm.getString("endpoint.warn.noUtilityExecutor"));
+            utilityExecutor = new ScheduledThreadPoolExecutor(1);
+        }
+        return utilityExecutor;
+    }
+
+    protected final List<String> negotiableProtocols = new ArrayList<>();
+    public void addNegotiatedProtocol(String negotiableProtocol) {
+        negotiableProtocols.add(negotiableProtocol);
+    }
+    public boolean hasNegotiableProtocols() {
+        return (negotiableProtocols.size() > 0);
+    }
+
 
     public final int getLocalPort() {
         try {
@@ -116,6 +147,16 @@ public abstract class AbstractEndpoint<S,U> {
         }
     }
 
+    /**
+     * Allows the server developer to specify the acceptCount (backlog) that
+     * should be used for server sockets. By default, this value
+     * is 100.
+     */
+    private int acceptCount = 100;
+    public void setAcceptCount(int acceptCount) { if (acceptCount > 0) {
+        this.acceptCount = acceptCount;
+    } }
+    public int getAcceptCount() { return acceptCount; }
 
 
     public final void init() throws Exception {
@@ -185,6 +226,35 @@ public abstract class AbstractEndpoint<S,U> {
     public void addSslHostConfig(SSLHostConfig sslHostConfig) throws IllegalArgumentException {
         addSslHostConfig(sslHostConfig, false);
     }
+
+    /**
+     * Create the SSLContextfor the the given SSLHostConfig.
+     *
+     * @param sslHostConfig The SSLHostConfig for which the SSLContext should be
+     *                      created
+     * @throws Exception If the SSLContext cannot be created for the given
+     *                   SSLHostConfig
+     */
+    protected abstract void createSSLContext(SSLHostConfig sslHostConfig) throws Exception;
+
+
+    /**
+     * Release the SSLContext, if any, associated with the SSLHostConfig.
+     *
+     * @param sslHostConfig The SSLHostConfig for which the SSLContext should be
+     *                      released
+     */
+    protected void releaseSSLContext(SSLHostConfig sslHostConfig) {
+        for (SSLHostConfigCertificate certificate : sslHostConfig.getCertificates()) {
+            if (certificate.getSslContext() != null) {
+                SSLContext sslContext = certificate.getSslContext();
+                if (sslContext != null) {
+                    sslContext.destroy();
+                }
+            }
+        }
+    }
+
     /**
      * Add the given SSL Host configuration, optionally replacing the existing
      * configuration for the given host.
@@ -260,7 +330,17 @@ public abstract class AbstractEndpoint<S,U> {
         socketProperties.setSoLingerOn(connectionLinger>=0);
     }
 
-
+    private String defaultSSLHostConfigName = SSLHostConfig.DEFAULT_SSL_HOST_NAME;
+    /**
+     * @return The host name for the default SSL configuration for this endpoint
+     *         - always in lower case.
+     */
+    public String getDefaultSSLHostConfigName() {
+        return defaultSSLHostConfigName;
+    }
+    public void setDefaultSSLHostConfigName(String defaultSSLHostConfigName) {
+        this.defaultSSLHostConfigName = defaultSSLHostConfigName.toLowerCase(Locale.ENGLISH);
+    }
     /**
      * Socket TCP no delay.
      *

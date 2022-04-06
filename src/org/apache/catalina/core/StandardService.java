@@ -246,9 +246,12 @@ public class StandardService extends LifecycleMBeanBase implements Service {
         return mapper;
     }
 
+    /**
+     * Return the <code>Server</code> with which we are associated (if any).
+     */
     @Override
     public Server getServer() {
-        return null;
+        return this.server;
     }
 
     /**

@@ -2,8 +2,9 @@ package org.apache.coyote.http11;
 
 import org.apache.tomcat.util.net.AbstractEndpoint;
 import org.apache.tomcat.util.net.AbstractJsseEndpoint;
+import org.apache.tomcat.util.net.openssl.OpenSSLImplementation;
 
-public class AbstractHttp11JsseProtocol <S>
+public abstract class AbstractHttp11JsseProtocol <S>
         extends AbstractHttp11Protocol<S> {
     public AbstractHttp11JsseProtocol(AbstractEndpoint<S, ?> endpoint) {
         super(endpoint);
@@ -24,5 +25,14 @@ public class AbstractHttp11JsseProtocol <S>
     public String getSslImplementationName() { return getEndpoint().getSslImplementationName(); }
     public void setSslImplementationName(String s) { getEndpoint().setSslImplementationName(s); }
 
-
+    protected String getSslImplementationShortName() {
+        if (OpenSSLImplementation.class.getName().equals(getSslImplementationName())) {
+            return "openssl";
+        }
+        if (getSslImplementationName() != null
+                && getSslImplementationName().endsWith(".panama.OpenSSLImplementation")) {
+            return "openssljava17";
+        }
+        return "jsse";
+    }
 }

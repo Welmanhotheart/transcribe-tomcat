@@ -186,6 +186,11 @@ public class StandardServer extends LifecycleMBeanBase implements Server {
         return portOffset;
     }
 
+    @Override
+    public ScheduledExecutorService getUtilityExecutor() {
+        return utilityExecutorWrapper;
+    }
+
     /**
      * Set the global naming resources.
      *

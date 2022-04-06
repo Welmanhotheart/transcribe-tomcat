@@ -1,6 +1,8 @@
 package org.apache.tomcat.util.net;
 
 import javax.management.ObjectName;
+import java.net.ServerSocket;
+import java.net.SocketException;
 
 public class SocketProperties {
 
@@ -22,6 +24,39 @@ public class SocketProperties {
      */
     protected Boolean tcpNoDelay = Boolean.TRUE;
 
+    /**
+     * Performance preferences according to
+     * http://docs.oracle.com/javase/1.5.0/docs/api/java/net/Socket.html#setPerformancePreferences(int,%20int,%20int)
+     * All three performance attributes must be set or the JVM defaults will be
+     * used.
+     */
+    protected Integer performanceConnectionTime = null;
+
+    /**
+     * Performance preferences according to
+     * http://docs.oracle.com/javase/1.5.0/docs/api/java/net/Socket.html#setPerformancePreferences(int,%20int,%20int)
+     * All three performance attributes must be set or the JVM defaults will be
+     * used.
+     */
+    protected Integer performanceLatency = null;
+
+    /**
+     * Performance preferences according to
+     * http://docs.oracle.com/javase/1.5.0/docs/api/java/net/Socket.html#setPerformancePreferences(int,%20int,%20int)
+     * All three performance attributes must be set or the JVM defaults will be
+     * used.
+     */
+    protected Integer performanceBandwidth = null;
+
+    /**
+     * SO_REUSEADDR option. JVM default used if not set.
+     */
+    protected Boolean soReuseAddress = null;
+    /**
+     * Socket receive buffer size in bytes (SO_RCVBUF).
+     * JVM default used if not set.
+     */
+    protected Integer rxBufSize = null;
 
     /**
      * SO_TIMEOUT option. default is 20000.
@@ -55,5 +90,24 @@ public class SocketProperties {
 
     ObjectName getObjectName() {
         return oname;
+    }
+
+    public void setProperties(ServerSocket socket) throws SocketException {
+        if (rxBufSize != null) {
+            socket.setReceiveBufferSize(rxBufSize.intValue());
+        }
+        if (performanceConnectionTime != null && performanceLatency != null &&
+                performanceBandwidth != null) {
+            socket.setPerformancePreferences(
+                    performanceConnectionTime.intValue(),
+                    performanceLatency.intValue(),
+                    performanceBandwidth.intValue());
+        }
+        if (soReuseAddress != null) {
+            socket.setReuseAddress(soReuseAddress.booleanValue());
+        }
+        if (soTimeout != null && soTimeout.intValue() >= 0) {
+            socket.setSoTimeout(soTimeout.intValue());
+        }
     }
 }

@@ -27,4 +27,10 @@ public class CoyoteAdapter implements Adapter {
         this.connector = connector;
 
     }
+
+    @Override
+    public String getDomain() {
+        return connector.getDomain();
+    }
+
 }
