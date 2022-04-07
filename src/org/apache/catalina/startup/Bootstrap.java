@@ -334,8 +334,13 @@ public class Bootstrap {
 
     }
 
-    private void start() {
+    private void start() throws Exception {
+        if (catalinaDaemon == null) {
+            init();
+        }
 
+        Method method = catalinaDaemon.getClass().getMethod("start", (Class [])null);
+        method.invoke(catalinaDaemon, (Object [])null);
     }
 
     private void load(String[] arguments) throws Exception {

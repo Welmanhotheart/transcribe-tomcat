@@ -58,7 +58,9 @@ public class NioEndpoint extends AbstractJsseEndpoint<NioChannel, SocketChannel>
      * Use System.inheritableChannel to obtain channel from stdin/stdout.
      */
     private boolean useInheritedChannel = false;
-    public void setUseInheritedChannel(boolean useInheritedChannel) { this.useInheritedChannel = useInheritedChannel; }
+    public void setUseInheritedChannel(boolean useInheritedChannel) {
+        this.useInheritedChannel = useInheritedChannel;
+    }
     public boolean getUseInheritedChannel() { return useInheritedChannel; }
 
     /**

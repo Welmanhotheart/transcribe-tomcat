@@ -41,6 +41,9 @@ public class Digester extends DefaultHandler2 {
      */
     protected ErrorHandler errorHandler = null;
 
+    private static final HashSet<String> generatedClasses = new HashSet<>();
+
+
     private Object root = null;
     private Rules rules;
     /**
@@ -200,6 +203,9 @@ public class Digester extends DefaultHandler2 {
     }
 
 
+    public static String[] getGeneratedClasses() {
+        return generatedClasses.toArray(new String[0]);
+    }
     /**
      * Parse the content of the specified input stream using this Digester.
      * Returns the root element from the object stack (if any).

@@ -47,7 +47,9 @@ public abstract class AbstractEndpoint<S,U> {
      */
     private boolean SSLEnabled = false;
     public boolean isSSLEnabled() { return SSLEnabled; }
-    public void setSSLEnabled(boolean SSLEnabled) { this.SSLEnabled = SSLEnabled; }
+    public void setSSLEnabled(boolean SSLEnabled) {
+        this.SSLEnabled = SSLEnabled;
+    }
 
     /**
      * Address for the server socket.

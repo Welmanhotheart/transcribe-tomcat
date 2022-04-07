@@ -2,11 +2,14 @@ package org.apache.catalina.startup;
 
 import org.apache.catalina.Container;
 import org.apache.catalina.LifecycleException;
+import org.apache.catalina.LifecycleState;
 import org.apache.catalina.Server;
 import org.apache.catalina.connector.Connector;
 import org.apache.catalina.core.StandardContext;
+import org.apache.juli.ClassLoaderLogManager;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
+import org.apache.tomcat.util.ExceptionUtils;
 import org.apache.tomcat.util.digester.Digester;
 import org.apache.tomcat.util.digester.Rule;
 import org.apache.tomcat.util.digester.RuleSet;
@@ -19,6 +22,7 @@ import org.xml.sax.InputSource;
 
 import java.io.File;
 import java.io.FileWriter;
+import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Constructor;
 import java.util.ArrayList;
@@ -26,6 +30,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.LogManager;
 
 public class Catalina {
 
@@ -50,6 +55,15 @@ public class Catalina {
      */
     protected Server server = null;
     private String configFile = SERVER_XML;
+    /**
+     * Is naming enabled ?
+     */
+    protected boolean useNaming = true;
+    /**
+     * Use await.
+     */
+    protected boolean await = false;
+
 
     /**
      * Value of the argument, TODO, what does it mean?
@@ -65,6 +79,19 @@ public class Catalina {
      * Generate Tomcat embedded core from configuration files, TODO
      */
     private boolean generateCode = false;
+
+    /**
+     * Use shutdown hook flag.
+     */
+    protected boolean useShutdownHook = true;
+
+
+    /**
+     * Shutdown hook.
+     */
+    protected Thread shutdownHook = null;
+
+
 
     /**
      * Rethrow exceptions on init failure.
@@ -91,6 +118,49 @@ public class Catalina {
     public void load(String args[]) {
         arguments(args);
     }
+
+    /**
+     * Stop an existing server instance.
+     */
+    public void stop() {
+
+        try {
+            // Remove the ShutdownHook first so that server.stop()
+            // doesn't get invoked twice
+            if (useShutdownHook) {
+                Runtime.getRuntime().removeShutdownHook(shutdownHook);
+
+                // If JULI is being used, re-enable JULI's shutdown to ensure
+                // log messages are not lost
+                LogManager logManager = LogManager.getLogManager();
+                if (logManager instanceof ClassLoaderLogManager) {
+                    ((ClassLoaderLogManager) logManager).setUseShutdownHook(
+                            true);
+                }
+            }
+        } catch (Throwable t) {
+            ExceptionUtils.handleThrowable(t);
+            // This will fail on JDK 1.2. Ignoring, as Tomcat can run
+            // fine without the shutdown hook.
+        }
+
+        // Shut down the server
+        try {
+            Server s = getServer();
+            LifecycleState state = s.getState();
+            if (LifecycleState.STOPPING_PREP.compareTo(state) <= 0
+                    && LifecycleState.DESTROYED.compareTo(state) >= 0) {
+                // Nothing to do. stop() was already called
+            } else {
+                s.stop();
+                s.destroy();
+            }
+        } catch (LifecycleException e) {
+            log.error(sm.getString("catalina.stopError"), e);
+        }
+
+    }
+
 
     /**
      * TODO why is here
@@ -203,6 +273,102 @@ public class Catalina {
             log.info(sm.getString("catalina.init", Long.toString(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - t1))));
         }
     }
+
+
+    /**
+     * Start a new server instance.
+     */
+    public void start() {
+
+        if (getServer() == null) {
+            load();
+        }
+
+        if (getServer() == null) {
+            log.fatal(sm.getString("catalina.noServer"));
+            return;
+        }
+
+        long t1 = System.nanoTime();
+
+        // Start the new server
+        try {
+            getServer().start();
+        } catch (LifecycleException e) {
+            log.fatal(sm.getString("catalina.serverStartFail"), e);
+            try {
+                getServer().destroy();
+            } catch (LifecycleException e1) {
+                log.debug("destroy() failed for failed Server ", e1);
+            }
+            return;
+        }
+
+        if (log.isInfoEnabled()) {
+            log.info(sm.getString("catalina.startup", Long.toString(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - t1))));
+        }
+
+        if (generateCode) {
+            // Generate loader which will load all generated classes
+            generateLoader();
+        }
+
+        // Register shutdown hook
+        if (useShutdownHook) {
+            if (shutdownHook == null) {
+                shutdownHook = new CatalinaShutdownHook();
+            }
+            Runtime.getRuntime().addShutdownHook(shutdownHook);
+
+            // If JULI is being used, disable JULI's shutdown hook since
+            // shutdown hooks run in parallel and log messages may be lost
+            // if JULI's hook completes before the CatalinaShutdownHook()
+            LogManager logManager = LogManager.getLogManager();
+            if (logManager instanceof ClassLoaderLogManager) {
+                ((ClassLoaderLogManager) logManager).setUseShutdownHook(
+                        false);
+            }
+        }
+
+        if (await) {
+            await();
+            stop();
+        }
+    }
+
+    /**
+     * Await and shutdown.
+     */
+    public void await() {
+
+        getServer().await();
+
+    }
+
+    protected void generateLoader() {
+        String loaderClassName = "DigesterGeneratedCodeLoader";
+        StringBuilder code = new StringBuilder();
+        code.append("package ").append(generatedCodePackage).append(";").append(System.lineSeparator());
+        code.append("public class ").append(loaderClassName);
+        code.append(" implements org.apache.tomcat.util.digester.Digester.GeneratedCodeLoader {").append(System.lineSeparator());
+        code.append("public Object loadGeneratedCode(String className) {").append(System.lineSeparator());
+        code.append("switch (className) {").append(System.lineSeparator());
+        for (String generatedClassName : Digester.getGeneratedClasses()) {
+            code.append("case \"").append(generatedClassName).append("\" : return new ").append(generatedClassName);
+            code.append("();").append(System.lineSeparator());
+        }
+        code.append("default: return null; }").append(System.lineSeparator());
+        code.append("}}").append(System.lineSeparator());
+        File loaderLocation = new File(generatedCodeLocation, generatedCodePackage);
+        try (FileWriter writer = new FileWriter(new File(loaderLocation, loaderClassName + ".java"))) {
+            writer.write(code.toString());
+        } catch (IOException e) {
+            // Should not happen
+            log.debug("Error writing code loader", e);
+        }
+    }
+
+
 
 
     protected void initStreams() {
@@ -492,8 +658,33 @@ public class Catalina {
         return configFile;
     }
 
-    private void initNaming() {
-
+    protected void initNaming() {
+        // Setting additional variables
+        if (!useNaming) {
+            log.info(sm.getString("catalina.noNaming"));
+            System.setProperty("catalina.useNaming", "false");
+        } else {
+            System.setProperty("catalina.useNaming", "true");
+            String value = "org.apache.naming";
+            String oldValue =
+                    System.getProperty(javax.naming.Context.URL_PKG_PREFIXES);
+            if (oldValue != null) {
+                value = value + ":" + oldValue;
+            }
+            System.setProperty(javax.naming.Context.URL_PKG_PREFIXES, value);
+            if( log.isDebugEnabled() ) {
+                log.debug("Setting naming prefix=" + value);
+            }
+            value = System.getProperty
+                    (javax.naming.Context.INITIAL_CONTEXT_FACTORY);
+            if (value == null) {
+                System.setProperty
+                        (javax.naming.Context.INITIAL_CONTEXT_FACTORY,
+                                "org.apache.naming.java.javaURLContextFactory");
+            } else {
+                log.debug("INITIAL_CONTEXT_FACTORY already set " + value );
+            }
+        }
     }
 
     private interface ServerXml {
@@ -534,4 +725,35 @@ public class Catalina {
         }
 
     }
+
+
+
+
+    // XXX Should be moved to embedded !
+    /**
+     * Shutdown hook which will perform a clean shutdown of Catalina if needed.
+     */
+    protected class CatalinaShutdownHook extends Thread {
+
+        @Override
+        public void run() {
+            try {
+                if (getServer() != null) {
+                    Catalina.this.stop();
+                }
+            } catch (Throwable ex) {
+                ExceptionUtils.handleThrowable(ex);
+                log.error(sm.getString("catalina.shutdownHookFail"), ex);
+            } finally {
+                // If JULI is used, shut JULI down *after* the server shuts down
+                // so log messages aren't lost
+                LogManager logManager = LogManager.getLogManager();
+                if (logManager instanceof ClassLoaderLogManager) {
+                    ((ClassLoaderLogManager) logManager).shutdown();
+                }
+            }
+        }
+    }
+
+
 }

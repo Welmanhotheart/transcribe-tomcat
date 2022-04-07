@@ -26,6 +26,11 @@ public interface Server extends Lifecycle{
      */
     public int getPortOffset();
 
+    /**
+     * Wait until a proper shutdown command is received, then return.
+     */
+    public void await();
+
 
     /**
      * @return the utility executor managed by the Service.
@@ -76,6 +81,22 @@ public interface Server extends Lifecycle{
      */
     public ClassLoader getParentClassLoader();
 
+    /**
+     * @return the port number we listen to for shutdown commands.
+     *
+     * @see #getPortOffset()
+     * @see #getPortWithOffset()
+     */
+    public int getPort();
+
+    /**
+     * Get the actual port on which server is listening for the shutdown commands.
+     * If you do not set port offset, port is returned. If you set
+     * port offset, port offset + port is returned.
+     *
+     * @return the port with offset
+     */
+    public int getPortWithOffset();
 
     /**
      * Set the global naming resources.

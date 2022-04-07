@@ -5,20 +5,31 @@ import org.apache.catalina.deploy.NamingResourcesImpl;
 import org.apache.catalina.mbeans.MBeanFactory;
 import org.apache.catalina.startup.Catalina;
 import org.apache.catalina.util.LifecycleMBeanBase;
+import org.apache.juli.logging.Log;
+import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.util.buf.StringCache;
+import org.apache.tomcat.util.res.StringManager;
 import org.apache.tomcat.util.threads.TaskThreadFactory;
 
 import javax.management.MBeanServer;
 import javax.management.ObjectName;
 import java.beans.PropertyChangeSupport;
 import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.net.SocketTimeoutException;
+import java.security.AccessControlException;
 import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.util.Random;
+import java.util.concurrent.*;
 
 public class StandardServer extends LifecycleMBeanBase implements Server {
+
+    private static final Log log = LogFactory.getLog(StandardServer.class);
+    private static final StringManager sm = StringManager.getManager(StandardServer.class);
 
     /**
      * The port number on which we wait for shutdown commands.
@@ -37,9 +48,44 @@ public class StandardServer extends LifecycleMBeanBase implements Server {
     private Catalina catalina = null;
 
     /**
+     * Thread that currently is inside our await() method.
+     */
+    private volatile Thread awaitThread = null;
+
+    private volatile boolean stopAwait = false;
+
+    /**
+     * Server socket that is used to wait for the shutdown command.
+     */
+    private volatile ServerSocket awaitSocket = null;
+
+    /**
+     * The address on which we wait for shutdown commands.
+     */
+    private String address = "localhost";
+
+
+    /**
+     * A random number generator that is <strong>only</strong> used if
+     * the shutdown command string is longer than 1024 characters.
+     */
+    private Random random = null;
+
+    /**
      * Global naming resources.
      */
     private NamingResourcesImpl globalNamingResources = null;
+    /**
+     * Controller for the periodic lifecycle event.
+     */
+    private ScheduledFuture<?> periodicLifecycleEventFuture = null;
+
+    private ScheduledFuture<?> monitorFuture;
+
+    /**
+     * The lifecycle event period in seconds.
+     */
+    protected int periodicEventDelay = 10;
 
     /**
      * The set of Services associated with this Server.
@@ -185,6 +231,162 @@ public class StandardServer extends LifecycleMBeanBase implements Server {
     public int getPortOffset() {
         return portOffset;
     }
+
+    /**
+     * Return the port number we listen to for shutdown commands.
+     */
+    @Override
+    public int getPort() {
+        return this.port;
+    }
+
+    @Override
+    public int getPortWithOffset() {
+        // Non-positive port values have special meanings and the offset should
+        // not apply.
+        int port = getPort();
+        if (port > 0) {
+            return port + getPortOffset();
+        } else {
+            return port;
+        }
+    }
+    /**
+     * Wait until a proper shutdown command is received, then return.
+     * This keeps the main thread alive - the thread pool listening for http
+     * connections is daemon threads.
+     */
+    @Override
+    public void await() {
+        // Negative values - don't wait on port - tomcat is embedded or we just don't like ports
+        if (getPortWithOffset() == -2) {
+            // undocumented yet - for embedding apps that are around, alive.
+            return;
+        }
+        if (getPortWithOffset() == -1) {
+            try {
+                awaitThread = Thread.currentThread();
+                while(!stopAwait) {
+                    try {
+                        Thread.sleep( 10000 );
+                    } catch( InterruptedException ex ) {
+                        // continue and check the flag
+                    }
+                }
+            } finally {
+                awaitThread = null;
+            }
+            return;
+        }
+
+        // Set up a server socket to wait on
+        try {
+            awaitSocket = new ServerSocket(getPortWithOffset(), 1,
+                    InetAddress.getByName(address));
+        } catch (IOException e) {
+            log.error(sm.getString("standardServer.awaitSocket.fail", address,
+                    String.valueOf(getPortWithOffset()), String.valueOf(getPort()),
+                    String.valueOf(getPortOffset())), e);
+            return;
+        }
+
+        try {
+            awaitThread = Thread.currentThread();
+
+            // Loop waiting for a connection and a valid command
+            while (!stopAwait) {
+                ServerSocket serverSocket = awaitSocket;
+                if (serverSocket == null) {
+                    break;
+                }
+
+                // Wait for the next connection
+                Socket socket = null;
+                StringBuilder command = new StringBuilder();
+                try {
+                    InputStream stream;
+                    long acceptStartTime = System.currentTimeMillis();
+                    try {
+                        socket = serverSocket.accept();
+                        socket.setSoTimeout(10 * 1000);  // Ten seconds
+                        stream = socket.getInputStream();
+                    } catch (SocketTimeoutException ste) {
+                        // This should never happen but bug 56684 suggests that
+                        // it does.
+                        log.warn(sm.getString("standardServer.accept.timeout",
+                                Long.valueOf(System.currentTimeMillis() - acceptStartTime)), ste);
+                        continue;
+                    } catch (AccessControlException ace) {
+                        log.warn(sm.getString("standardServer.accept.security"), ace);
+                        continue;
+                    } catch (IOException e) {
+                        if (stopAwait) {
+                            // Wait was aborted with socket.close()
+                            break;
+                        }
+                        log.error(sm.getString("standardServer.accept.error"), e);
+                        break;
+                    }
+
+                    // Read a set of characters from the socket
+                    int expected = 1024; // Cut off to avoid DoS attack
+                    while (expected < shutdown.length()) {
+                        if (random == null) {
+                            random = new Random();
+                        }
+                        expected += (random.nextInt() % 1024);
+                    }
+                    while (expected > 0) {
+                        int ch = -1;
+                        try {
+                            ch = stream.read();
+                        } catch (IOException e) {
+                            log.warn(sm.getString("standardServer.accept.readError"), e);
+                            ch = -1;
+                        }
+                        // Control character or EOF (-1) terminates loop
+                        if (ch < 32 || ch == 127) {
+                            break;
+                        }
+                        command.append((char) ch);
+                        expected--;
+                    }
+                } finally {
+                    // Close the socket now that we are done with it
+                    try {
+                        if (socket != null) {
+                            socket.close();
+                        }
+                    } catch (IOException e) {
+                        // Ignore
+                    }
+                }
+
+                // Match against our command string
+                boolean match = command.toString().equals(shutdown);
+                if (match) {
+                    log.info(sm.getString("standardServer.shutdownViaPort"));
+                    break;
+                } else {
+                    log.warn(sm.getString("standardServer.invalidShutdownCommand", command.toString()));
+                }
+            }
+        } finally {
+            ServerSocket serverSocket = awaitSocket;
+            awaitThread = null;
+            awaitSocket = null;
+
+            // Close the server socket and return
+            if (serverSocket != null) {
+                try {
+                    serverSocket.close();
+                } catch (IOException e) {
+                    // Ignore
+                }
+            }
+        }
+    }
+
 
     @Override
     public ScheduledExecutorService getUtilityExecutor() {
@@ -345,8 +547,47 @@ public class StandardServer extends LifecycleMBeanBase implements Server {
 
     }
 
+    protected void startPeriodicLifecycleEvent() {
+        if (periodicLifecycleEventFuture == null || (periodicLifecycleEventFuture != null && periodicLifecycleEventFuture.isDone())) {
+            if (periodicLifecycleEventFuture != null && periodicLifecycleEventFuture.isDone()) {
+                // There was an error executing the scheduled task, get it and log it
+                try {
+                    periodicLifecycleEventFuture.get();
+                } catch (InterruptedException | ExecutionException e) {
+                    log.error(sm.getString("standardServer.periodicEventError"), e);
+                }
+            }
+            periodicLifecycleEventFuture = getUtilityExecutor().scheduleAtFixedRate(
+                    () -> fireLifecycleEvent(Lifecycle.PERIODIC_EVENT, null), periodicEventDelay, periodicEventDelay, TimeUnit.SECONDS);
+        }
+    }
+
+
+    /**
+     * Start nested components ({@link Service}s) and implement the requirements
+     * of {@link org.apache.catalina.util.LifecycleBase#startInternal()}.
+     *
+     * @exception LifecycleException if this component detects a fatal error
+     *  that prevents this component from being used
+     */
     @Override
     protected void startInternal() throws LifecycleException {
 
+        fireLifecycleEvent(CONFIGURE_START_EVENT, null);
+        setState(LifecycleState.STARTING);
+
+        globalNamingResources.start();
+
+        // Start our defined Services
+        synchronized (servicesLock) {
+            for (Service service : services) {
+                service.start();
+            }
+        }
+
+        if (periodicEventDelay > 0) {
+            monitorFuture = getUtilityExecutor().scheduleWithFixedDelay(
+                    () -> startPeriodicLifecycleEvent(), 0, 60, TimeUnit.SECONDS);
+        }
     }
 }
