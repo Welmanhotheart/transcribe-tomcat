@@ -2,12 +2,16 @@ package org.apache.catalina.core;
 
 import org.apache.catalina.*;
 import org.apache.catalina.realm.NullRealm;
+import org.apache.catalina.util.ServerInfo;
 import org.apache.juli.logging.Log;
+import org.apache.juli.logging.LogFactory;
 
 import java.io.File;
 import java.util.Locale;
 
 public class StandardEngine extends ContainerBase implements Engine {
+
+    private static final Log log = LogFactory.getLog(StandardEngine.class);
 
     /**
      * Host name to use when no server host, or an unknown host,
@@ -42,6 +46,25 @@ public class StandardEngine extends ContainerBase implements Engine {
         support.firePropertyChange("defaultHost", oldDefaultHost,
                 this.defaultHost);
 
+    }
+
+    /**
+     * Start this component and implement the requirements
+     * of {@link org.apache.catalina.util.LifecycleBase#startInternal()}.
+     *
+     * @exception LifecycleException if this component detects a fatal error
+     *  that prevents this component from being used
+     */
+    @Override
+    protected synchronized void startInternal() throws LifecycleException {
+
+        // Log our server identification information
+        if (log.isInfoEnabled()) {
+            log.info(sm.getString("standardEngine.start", ServerInfo.getServerInfo()));
+        }
+
+        // Standard container startup
+        super.startInternal();
     }
 
     @Override
@@ -79,9 +102,23 @@ public class StandardEngine extends ContainerBase implements Engine {
         return configured;
     }
 
+    /**
+     * Return the <code>Service</code> with which we are associated (if any).
+     */
+    @Override
+    public Service getService() {
+        return this.service;
+    }
+
+
+    /**
+     * Set the <code>Service</code> with which we are associated (if any).
+     *
+     * @param service The service that owns this Engine
+     */
     @Override
     public void setService(Service service) {
-
+        this.service = service;
     }
 
     @Override
@@ -99,10 +136,6 @@ public class StandardEngine extends ContainerBase implements Engine {
         return super.getCatalinaBase();
     }
 
-    @Override
-    public Container findChild(String name) {
-        return null;
-    }
 
 
     /**

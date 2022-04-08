@@ -207,7 +207,20 @@ public interface Container extends Lifecycle{
      */
     public ClassLoader getParentClassLoader();
 
-
+    /**
+     * Return the Service to which this container belongs.
+     * @param container The container to start from
+     * @return the Service, or null if not found
+     */
+    public static Service getService(Container container) {
+        while (container != null && !(container instanceof Engine)) {
+            container = container.getParent();
+        }
+        if (container == null) {
+            return null;
+        }
+        return ((Engine) container).getService();
+    }
 
     /**
      * Set the parent Container to which this Container is being added as a
@@ -222,6 +235,16 @@ public interface Container extends Lifecycle{
      */
     public void setParent(Container container);
 
+    // --------------------------------------------------------- Public Methods
+
+
+    /**
+     * Execute a periodic task, such as reloading, etc. This method will be
+     * invoked inside the classloading context of this container. Unexpected
+     * throwables will be caught and logged.
+     */
+    public void backgroundProcess();
+
     /**
      * Add a container event listener to this component.
      *
@@ -230,5 +253,20 @@ public interface Container extends Lifecycle{
     public void addContainerListener(ContainerListener listener);
 
 
+    /**
+     * Get the delay between the invocation of the backgroundProcess method on
+     * this container and its children. Child containers will not be invoked if
+     * their delay value is positive (which would mean they are using their own
+     * thread). Setting this to a positive value will cause a thread to be
+     * spawned. After waiting the specified amount of time, the thread will
+     * invoke the {@link #backgroundProcess()} method on this container and all
+     * children with non-positive delay values.
+     *
+     * @return The delay between the invocation of the backgroundProcess method
+     *         on this container and its children. A non-positive value
+     *         indicates that background processing will be managed by the
+     *         parent.
+     */
+    public int getBackgroundProcessorDelay();
 
 }

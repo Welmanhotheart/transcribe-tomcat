@@ -2,6 +2,7 @@ package org.apache.catalina;
 
 import org.apache.catalina.deploy.NamingResourcesImpl;
 import org.apache.tomcat.ContextBind;
+import org.apache.tomcat.InstanceManager;
 
 import java.net.URL;
 
@@ -18,6 +19,32 @@ public interface Context extends Container, ContextBind {
      * @param path The new context path
      */
     public void setPath(String path);
+
+    /**
+     * @return the Resources with which this Context is associated.
+     */
+    public WebResourceRoot getResources();
+
+
+    /**
+     * Set the Resources object with which this Context is associated.
+     *
+     * @param resources The newly associated Resources
+     */
+    public void setResources(WebResourceRoot resources);
+
+    /**
+     * @return the instance manager associated with this context.
+     */
+    public InstanceManager getInstanceManager();
+
+    /**
+     * Set the instance manager associated with this context.
+     *
+     * @param instanceManager the new instance manager instance
+     */
+    public void setInstanceManager(InstanceManager instanceManager);
+
 
     /**
      * Return the URL of the XML descriptor for this context.
@@ -44,6 +71,14 @@ public interface Context extends Container, ContextBind {
      * @param configFile The URL of the XML descriptor for this context.
      */
     public void setConfigFile(URL configFile);
+
+
+    /**
+     * @return The version of this web application, used to differentiate
+     * different versions of the same web application when using parallel
+     * deployment. If not specified, defaults to the empty string.
+     */
+    public String getWebappVersion();
 
 
     /**

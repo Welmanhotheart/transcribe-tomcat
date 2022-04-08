@@ -2,17 +2,23 @@ package org.apache.catalina.core;
 
 import org.apache.catalina.*;
 import org.apache.catalina.deploy.NamingResourcesImpl;
+import org.apache.catalina.util.URLEncoder;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
+import org.apache.tomcat.InstanceManager;
 import org.apache.tomcat.util.descriptor.XmlIdentifiers;
 
 import javax.management.*;
 import java.io.File;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class StandardContext extends ContainerBase
         implements Context, NotificationEmitter {
@@ -28,6 +34,15 @@ public class StandardContext extends ContainerBase
     private NotificationBroadcasterSupport broadcaster = null;
 
     private final Object servletMappingsLock = new Object();
+
+    private final ReadWriteLock resourcesLock = new ReentrantReadWriteLock();
+
+    private WebResourceRoot resources;
+
+    /**
+     * Lifecycle provider.
+     */
+    private InstanceManager instanceManager = null;
 
     /**
      * The servlet mappings for this web application, keyed by
@@ -46,6 +61,30 @@ public class StandardContext extends ContainerBase
      * Context level override for default {@link StandardHost#isCopyXML()}.
      */
     private boolean copyXML = false;
+
+    /**
+     * Unencoded path for this web application.
+     */
+    private String path = null;
+
+    /**
+     * Encoded path.
+     */
+    private String encodedPath = null;
+
+    /**
+     * The URL of the XML descriptor for this context.
+     */
+    private URL configFile = null;
+
+    private String webappVersion = "";
+
+
+    /**
+     * The Loader implementation with which this Container is associated.
+     */
+    private Loader loader = null;
+    private final ReadWriteLock loaderLock = new ReentrantReadWriteLock();
 
     // ----------------------------------------------------------- Constructors
 
@@ -345,48 +384,218 @@ public class StandardContext extends ContainerBase
     }
 
     @Override
-    public File getCatalinaBase() {
-        return null;
+    public WebResourceRoot getResources() {
+        Lock readLock = resourcesLock.readLock();
+        readLock.lock();
+        try {
+            return resources;
+        } finally {
+            readLock.unlock();
+        }
+    }
+
+
+    @Override
+    public void setResources(WebResourceRoot resources) {
+
+        Lock writeLock = resourcesLock.writeLock();
+        writeLock.lock();
+        WebResourceRoot oldResources = null;
+        try {
+            if (getState().isAvailable()) {
+                throw new IllegalStateException
+                        (sm.getString("standardContext.resourcesStart"));
+            }
+
+            oldResources = this.resources;
+            if (oldResources == resources) {
+                return;
+            }
+
+            this.resources = resources;
+            if (oldResources != null) {
+                oldResources.setContext(null);
+            }
+            if (resources != null) {
+                resources.setContext(this);
+            }
+
+            support.firePropertyChange("resources", oldResources,
+                    resources);
+        } finally {
+            writeLock.unlock();
+        }
     }
 
     @Override
-    public Container findChild(String name) {
-        return null;
+    public InstanceManager getInstanceManager() {
+        return instanceManager;
     }
+
 
     @Override
-    public Log getLogger() {
-        return null;
+    public void setInstanceManager(InstanceManager instanceManager) {
+        this.instanceManager = instanceManager;
     }
 
+
+    @Override
+    public void backgroundProcess() {
+
+        if (!getState().isAvailable()) {
+            return;
+        }
+
+        Loader loader = getLoader();
+        if (loader != null) {
+            try {
+                loader.backgroundProcess();
+            } catch (Exception e) {
+                log.warn(sm.getString(
+                        "standardContext.backgroundProcess.loader", loader), e);
+            }
+        }
+        Manager manager = getManager();
+        if (manager != null) {
+            try {
+                manager.backgroundProcess();
+            } catch (Exception e) {
+                log.warn(sm.getString(
+                                "standardContext.backgroundProcess.manager", manager),
+                        e);
+            }
+        }
+        WebResourceRoot resources = getResources();
+        if (resources != null) {
+            try {
+                resources.backgroundProcess();
+            } catch (Exception e) {
+                log.warn(sm.getString(
+                        "standardContext.backgroundProcess.resources",
+                        resources), e);
+            }
+        }
+        InstanceManager instanceManager = getInstanceManager();
+        if (instanceManager != null) {
+            try {
+                instanceManager.backgroundProcess();
+            } catch (Exception e) {
+                log.warn(sm.getString(
+                        "standardContext.backgroundProcess.instanceManager",
+                        resources), e);
+            }
+        }
+        super.backgroundProcess();
+    }
+
+
+    /**
+     * @return the context path for this Context.
+     */
     @Override
     public String getPath() {
-        return null;
+        return path;
     }
 
+    /**
+     * Set the context path for this Context.
+     *
+     * @param path The new context path
+     */
     @Override
     public void setPath(String path) {
-
+        boolean invalid = false;
+        if (path == null || path.equals("/")) {
+            invalid = true;
+            this.path = "";
+        } else if (path.isEmpty() || path.startsWith("/")) {
+            this.path = path;
+        } else {
+            invalid = true;
+            this.path = "/" + path;
+        }
+        if (this.path.endsWith("/")) {
+            invalid = true;
+            this.path = this.path.substring(0, this.path.length() - 1);
+        }
+        if (invalid) {
+            log.warn(sm.getString(
+                    "standardContext.pathInvalid", path, this.path));
+        }
+        encodedPath = URLEncoder.DEFAULT.encode(this.path, StandardCharsets.UTF_8);
+        if (getName() == null) {
+            setName(this.path);
+        }
     }
 
     @Override
     public URL getConfigFile() {
-        return null;
+        return this.configFile;
     }
 
     @Override
     public Loader getLoader() {
-        return null;
+        Lock readLock = loaderLock.readLock();
+        readLock.lock();
+        try {
+            return loader;
+        } finally {
+            readLock.unlock();
+        }
     }
 
     @Override
     public void setLoader(Loader loader) {
 
+        Lock writeLock = loaderLock.writeLock();
+        writeLock.lock();
+        Loader oldLoader = null;
+        try {
+            // Change components if necessary
+            oldLoader = this.loader;
+            if (oldLoader == loader) {
+                return;
+            }
+            this.loader = loader;
+
+            // Stop the old component if necessary
+            if (getState().isAvailable() && (oldLoader != null) &&
+                    (oldLoader instanceof Lifecycle)) {
+                try {
+                    ((Lifecycle) oldLoader).stop();
+                } catch (LifecycleException e) {
+                    log.error(sm.getString("standardContext.setLoader.stop"), e);
+                }
+            }
+
+            // Start the new component if necessary
+            if (loader != null) {
+                loader.setContext(this);
+            }
+            if (getState().isAvailable() && (loader != null) &&
+                    (loader instanceof Lifecycle)) {
+                try {
+                    ((Lifecycle) loader).start();
+                } catch (LifecycleException e) {
+                    log.error(sm.getString("standardContext.setLoader.start"), e);
+                }
+            }
+        } finally {
+            writeLock.unlock();
+        }
+
+        // Report this property change to interested listeners
+        support.firePropertyChange("loader", oldLoader, loader);
     }
 
     @Override
     public void setConfigFile(URL configFile) {
+        this.configFile = configFile;
+    }
 
+    @Override
+    public String getWebappVersion() {
+        return webappVersion;
     }
 
     @Override
@@ -431,6 +640,16 @@ public class StandardContext extends ContainerBase
 
     @Override
     public void setManager(Manager manager) {
+
+    }
+
+    @Override
+    public ClassLoader bind(boolean usePrivilegedAction, ClassLoader originalClassLoader) {
+        return null;
+    }
+
+    @Override
+    public void unbind(boolean usePrivilegedAction, ClassLoader originalClassLoader) {
 
     }
 }

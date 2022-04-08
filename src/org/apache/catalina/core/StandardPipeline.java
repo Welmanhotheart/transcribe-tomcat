@@ -181,4 +181,14 @@ public class StandardPipeline extends LifecycleBase implements Pipeline {
     public Valve[] getValves() {
         return new Valve[0];
     }
+
+
+    @Override
+    public Valve getFirst() {
+        if (first != null) {
+            return first;
+        }
+
+        return basic;
+    }
 }

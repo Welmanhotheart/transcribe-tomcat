@@ -56,13 +56,41 @@ public class RealmBase extends LifecycleMBeanBase implements Realm {
 
     }
 
+
+    protected String realmPath = "/realm0";
+
+    public String getRealmPath() {
+        return realmPath;
+    }
+
+    public void setRealmPath(String theRealmPath) {
+        realmPath = theRealmPath;
+    }
+
+
+
+    protected String getRealmSuffix() {
+        return ",realmPath=" + getRealmPath();
+    }
+
+    // -------------------- JMX and Registration  --------------------
+
     @Override
-    protected String getObjectNameKeyProperties() {
+    public String getObjectNameKeyProperties() {
+
+        StringBuilder keyProperties = new StringBuilder("type=Realm");
+        keyProperties.append(getRealmSuffix());
+        keyProperties.append(container.getMBeanKeyProperties());
+
+        return keyProperties.toString();
+    }
+    @Override
+    protected String getDomainInternal() {
         return null;
     }
 
     @Override
-    protected String getDomainInternal() {
-        return null;
+    public void backgroundProcess() {
+
     }
 }

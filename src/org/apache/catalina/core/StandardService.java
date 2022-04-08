@@ -281,10 +281,48 @@ public class StandardService extends LifecycleMBeanBase implements Service {
 
     }
 
+    /**
+     * Start nested components ({@link Executor}s, {@link Connector}s and
+     * {@link Container}s) and implement the requirements of
+     * {@link org.apache.catalina.util.LifecycleBase#startInternal()}.
+     *
+     * @exception LifecycleException if this component detects a fatal error
+     *  that prevents this component from being used
+     */
     @Override
     protected void startInternal() throws LifecycleException {
 
+        if(log.isInfoEnabled()) {
+            log.info(sm.getString("standardService.start.name", this.name));
+        }
+        setState(LifecycleState.STARTING);
+
+        // Start our defined Container first
+        if (engine != null) {
+            synchronized (engine) {
+                engine.start();
+            }
+        }
+
+        synchronized (executors) {
+            for (Executor executor: executors) {
+                executor.start();
+            }
+        }
+
+        mapperListener.start();
+
+        // Start our defined Connectors second
+        synchronized (connectorsLock) {
+            for (Connector connector: connectors) {
+                // If it has already failed, don't try and start it
+                if (connector.getState() != LifecycleState.FAILED) {
+                    connector.start();
+                }
+            }
+        }
     }
+
 
 
 }

@@ -5,6 +5,8 @@ import org.apache.catalina.util.ContextName;
 import org.apache.catalina.util.LifecycleMBeanBase;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
+import org.apache.tomcat.util.ExceptionUtils;
+import org.apache.tomcat.util.MultiThrowable;
 import org.apache.tomcat.util.res.StringManager;
 
 import javax.management.NotificationBroadcasterSupport;
@@ -12,10 +14,10 @@ import java.beans.PropertyChangeSupport;
 import java.io.File;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.*;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -46,6 +48,19 @@ public abstract class ContainerBase extends LifecycleMBeanBase implements Contai
      * The broadcaster that sends j2ee notifications.
      */
     private NotificationBroadcasterSupport broadcaster = null;
+
+    protected ScheduledFuture<?> monitorFuture;
+
+    /**
+     * The future allowing control of the background processor.
+     */
+    protected ScheduledFuture<?> backgroundProcessorFuture;
+
+    /**
+     * The processor delay for this component.
+     */
+    protected int backgroundProcessorDelay = -1;
+
 
     /**
      * The Logger implementation with which this Container is associated.
@@ -269,6 +284,64 @@ public abstract class ContainerBase extends LifecycleMBeanBase implements Contai
     }
 
 
+    /**
+     * Execute a periodic task, such as reloading, etc. This method will be
+     * invoked inside the classloading context of this container. Unexpected
+     * throwables will be caught and logged.
+     */
+    @Override
+    public void backgroundProcess() {
+
+        if (!getState().isAvailable()) {
+            return;
+        }
+
+        Cluster cluster = getClusterInternal();
+        if (cluster != null) {
+            try {
+                cluster.backgroundProcess();
+            } catch (Exception e) {
+                log.warn(sm.getString("containerBase.backgroundProcess.cluster",
+                        cluster), e);
+            }
+        }
+        Realm realm = getRealmInternal();
+        if (realm != null) {
+            try {
+                realm.backgroundProcess();
+            } catch (Exception e) {
+                log.warn(sm.getString("containerBase.backgroundProcess.realm", realm), e);
+            }
+        }
+        Valve current = pipeline.getFirst();
+        while (current != null) {
+            try {
+                current.backgroundProcess();
+            } catch (Exception e) {
+                log.warn(sm.getString("containerBase.backgroundProcess.valve", current), e);
+            }
+            current = current.getNext();
+        }
+        fireLifecycleEvent(Lifecycle.PERIODIC_EVENT, null);
+    }
+
+
+    /**
+     * Return the child Container, associated with this Container, with
+     * the specified name (if any); otherwise, return <code>null</code>
+     *
+     * @param name Name of the child Container to be retrieved
+     */
+    @Override
+    public Container findChild(String name) {
+        if (name == null) {
+            return null;
+        }
+        synchronized (children) {
+            return children.get(name);
+        }
+    }
+
     @Override
     protected void destroyInternal() throws LifecycleException {
 
@@ -466,10 +539,70 @@ public abstract class ContainerBase extends LifecycleMBeanBase implements Contai
 
     }
 
+    /**
+     * Start this component and implement the requirements
+     * of {@link org.apache.catalina.util.LifecycleBase#startInternal()}.
+     *
+     * @exception LifecycleException if this component detects a fatal error
+     *  that prevents this component from being used
+     */
     @Override
-    protected void startInternal() throws LifecycleException {
+    protected synchronized void startInternal() throws LifecycleException {
 
+        // Start our subordinate components, if any
+        logger = null;
+        getLogger();
+        Cluster cluster = getClusterInternal();
+        if (cluster instanceof Lifecycle) {
+            ((Lifecycle) cluster).start();
+        }
+        Realm realm = getRealmInternal();
+        if (realm instanceof Lifecycle) {
+            ((Lifecycle) realm).start();
+        }
+
+        // Start our child containers, if any
+        Container children[] = findChildren();
+        List<Future<Void>> results = new ArrayList<>();
+        for (Container child : children) {
+            results.add(startStopExecutor.submit(new StartChild(child)));
+        }
+
+        MultiThrowable multiThrowable = null;
+
+        for (Future<Void> result : results) {
+            try {
+                result.get();
+            } catch (Throwable e) {
+                log.error(sm.getString("containerBase.threadedStartFailed"), e);
+                if (multiThrowable == null) {
+                    multiThrowable = new MultiThrowable();
+                }
+                multiThrowable.add(e);
+            }
+
+        }
+        if (multiThrowable != null) {
+            throw new LifecycleException(sm.getString("containerBase.threadedStartFailed"),
+                    multiThrowable.getThrowable());
+        }
+
+        // Start the Valves in our pipeline (including the basic), if any
+        if (pipeline instanceof Lifecycle) {
+            ((Lifecycle) pipeline).start();
+        }
+
+        setState(LifecycleState.STARTING);
+
+        // Start our thread
+        if (backgroundProcessorDelay > 0) {
+            monitorFuture = Container.getService(ContainerBase.this).getServer()
+                    .getUtilityExecutor().scheduleWithFixedDelay(
+                            new ContainerBackgroundProcessorMonitor(), 0, 60, TimeUnit.SECONDS);
+        }
     }
+
+
 
     @Override
     protected String getObjectNameKeyProperties() {
@@ -590,6 +723,45 @@ public abstract class ContainerBase extends LifecycleMBeanBase implements Contai
 
     }
 
+    // -------------------- Background Thread --------------------
+
+    /**
+     * Start the background thread that will periodically check for
+     * session timeouts.
+     */
+    protected void threadStart() {
+        if (backgroundProcessorDelay > 0
+                && (getState().isAvailable() || LifecycleState.STARTING_PREP.equals(getState()))
+                && (backgroundProcessorFuture == null || backgroundProcessorFuture.isDone())) {
+            if (backgroundProcessorFuture != null && backgroundProcessorFuture.isDone()) {
+                // There was an error executing the scheduled task, get it and log it
+                try {
+                    backgroundProcessorFuture.get();
+                } catch (InterruptedException | ExecutionException e) {
+                    log.error(sm.getString("containerBase.backgroundProcess.error"), e);
+                }
+            }
+            backgroundProcessorFuture = Container.getService(this).getServer().getUtilityExecutor()
+                    .scheduleWithFixedDelay(new ContainerBackgroundProcessor(),
+                            backgroundProcessorDelay, backgroundProcessorDelay,
+                            TimeUnit.SECONDS);
+        }
+    }
+
+
+
+
+    // ------------------------------- ContainerBackgroundProcessor Inner Class
+
+    protected class ContainerBackgroundProcessorMonitor implements Runnable {
+        @Override
+        public void run() {
+            if (getState().isAvailable()) {
+                threadStart();
+            }
+        }
+    }
+
 
     /**
      * Perform addChild with the permissions of this class.
@@ -611,6 +783,99 @@ public abstract class ContainerBase extends LifecycleMBeanBase implements Contai
             return null;
         }
 
+    }
+
+    /**
+     * Private runnable class to invoke the backgroundProcess method
+     * of this container and its children after a fixed delay.
+     */
+    protected class ContainerBackgroundProcessor implements Runnable {
+
+        @Override
+        public void run() {
+            processChildren(ContainerBase.this);
+        }
+
+        protected void processChildren(Container container) {
+            ClassLoader originalClassLoader = null;
+
+            try {
+                if (container instanceof Context) {
+                    Loader loader = ((Context) container).getLoader();
+                    // Loader will be null for FailedContext instances
+                    if (loader == null) {
+                        return;
+                    }
+
+                    // Ensure background processing for Contexts and Wrappers
+                    // is performed under the web app's class loader
+                    originalClassLoader = ((Context) container).bind(false, null);
+                }
+                container.backgroundProcess();
+                Container[] children = container.findChildren();
+                for (Container child : children) {
+                    if (child.getBackgroundProcessorDelay() <= 0) {
+                        processChildren(child);
+                    }
+                }
+            } catch (Throwable t) {
+                ExceptionUtils.handleThrowable(t);
+                log.error(sm.getString("containerBase.backgroundProcess.error"), t);
+            } finally {
+                if (container instanceof Context) {
+                    ((Context) container).unbind(false, originalClassLoader);
+                }
+            }
+        }
+    }
+
+
+    /**
+     * Get the delay between the invocation of the backgroundProcess method on
+     * this container and its children. Child containers will not be invoked
+     * if their delay value is not negative (which would mean they are using
+     * their own thread). Setting this to a positive value will cause
+     * a thread to be spawn. After waiting the specified amount of time,
+     * the thread will invoke the executePeriodic method on this container
+     * and all its children.
+     */
+    @Override
+    public int getBackgroundProcessorDelay() {
+        return backgroundProcessorDelay;
+    }
+
+    // ---------------------------- Inner classes used with start/stop Executor
+
+    private static class StartChild implements Callable<Void> {
+
+        private Container child;
+
+        public StartChild(Container child) {
+            this.child = child;
+        }
+
+        @Override
+        public Void call() throws LifecycleException {
+            child.start();
+            return null;
+        }
+    }
+
+    private static class StopChild implements Callable<Void> {
+
+        private Container child;
+
+        public StopChild(Container child) {
+            this.child = child;
+        }
+
+        @Override
+        public Void call() throws LifecycleException {
+            if (child.getState().isAvailable()) {
+                child.stop();
+            }
+            return null;
+        }
     }
 
 

@@ -23,7 +23,11 @@ public interface Pipeline extends Contained{
      */
     public Valve[] getValves();
 
-
+    /**
+     * @return the Valve instance that has been distinguished as the basic
+     * Valve for this Pipeline (if any).
+     */
+    public Valve getFirst();
 
     /**
      * Remove the specified Valve from the pipeline associated with this

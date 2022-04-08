@@ -15,4 +15,8 @@ public interface Engine  extends Container {
      */
     public void setService(Service service);
 
+    /**
+     * @return the <code>Service</code> with which we are associated (if any).
+     */
+    public Service getService();
 }

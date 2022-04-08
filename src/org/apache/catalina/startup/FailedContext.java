@@ -5,6 +5,7 @@ import org.apache.catalina.deploy.NamingResourcesImpl;
 import org.apache.catalina.util.ContextName;
 import org.apache.catalina.util.LifecycleMBeanBase;
 import org.apache.juli.logging.Log;
+import org.apache.tomcat.InstanceManager;
 import org.apache.tomcat.util.res.StringManager;
 
 import java.io.File;
@@ -129,8 +130,18 @@ public class FailedContext  extends LifecycleMBeanBase implements Context {
     public void setParent(Container parent) { this.parent = parent; }
 
     @Override
+    public void backgroundProcess() {
+
+    }
+
+    @Override
     public void addContainerListener(ContainerListener listener) {
 
+    }
+
+    @Override
+    public int getBackgroundProcessorDelay() {
+        return -1;
     }
 
 
@@ -140,13 +151,30 @@ public class FailedContext  extends LifecycleMBeanBase implements Context {
     }
 
 
+    private String path = null;
     @Override
-    public String getPath() {
+    public String getPath() { return path; }
+    @Override
+    public void setPath(String path) { this.path = path; }
+
+
+    @Override
+    public WebResourceRoot getResources() {
         return null;
     }
 
     @Override
-    public void setPath(String path) {
+    public void setResources(WebResourceRoot resources) {
+
+    }
+
+    @Override
+    public InstanceManager getInstanceManager() {
+        return null;
+    }
+
+    @Override
+    public void setInstanceManager(InstanceManager instanceManager) {
 
     }
 
@@ -170,10 +198,12 @@ public class FailedContext  extends LifecycleMBeanBase implements Context {
     public void setConfigFile(URL configFile) { this.configFile = configFile; }
 
 
-
+    private String webappVersion = null;
+    @Override
+    public String getWebappVersion() { return webappVersion; }
     @Override
     public void setWebappVersion(String webappVersion) {
-
+        this.webappVersion = webappVersion;
     }
 
     @Override
@@ -244,5 +274,15 @@ public class FailedContext  extends LifecycleMBeanBase implements Context {
     @Override
     protected String getDomainInternal() {
         return null;
+    }
+
+    @Override
+    public ClassLoader bind(boolean usePrivilegedAction, ClassLoader originalClassLoader) {
+        return null;
+    }
+
+    @Override
+    public void unbind(boolean usePrivilegedAction, ClassLoader originalClassLoader) {
+
     }
 }
