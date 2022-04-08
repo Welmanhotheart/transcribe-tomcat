@@ -1,9 +1,6 @@
 package org.apache.catalina.deploy;
 
-import org.apache.catalina.Container;
-import org.apache.catalina.Context;
-import org.apache.catalina.JmxEnabled;
-import org.apache.catalina.LifecycleException;
+import org.apache.catalina.*;
 import org.apache.catalina.mbeans.MBeanUtils;
 import org.apache.catalina.util.Introspection;
 import org.apache.catalina.util.LifecycleMBeanBase;
@@ -320,8 +317,11 @@ public class NamingResourcesImpl extends LifecycleMBeanBase
 
     }
 
+
     @Override
     protected void startInternal() throws LifecycleException {
-
+        fireLifecycleEvent(CONFIGURE_START_EVENT, null);
+        setState(LifecycleState.STARTING);
     }
+
 }
