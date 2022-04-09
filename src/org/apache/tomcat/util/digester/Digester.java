@@ -346,7 +346,7 @@ public class Digester extends DefaultHandler2 {
         return entityResolver;
     }
 
-    private SAXParser getParser() {
+    public SAXParser getParser() {
         // Return the parser we already created (if any)
         if (parser != null) {
             return parser;

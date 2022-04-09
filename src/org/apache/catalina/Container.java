@@ -90,6 +90,26 @@ public interface Container extends Lifecycle{
      */
     public void removeChild(Container child);
 
+    /**
+     * Obtain the number of threads available for starting and stopping any
+     * children associated with this container. This allows start/stop calls to
+     * children to be processed in parallel.
+     *
+     * @return The currently configured number of threads used to start/stop
+     *         children associated with this container
+     */
+    public int getStartStopThreads();
+
+
+    public  ObjectName getObjectName();
+    /**
+     * Sets the number of threads available for starting and stopping any
+     * children associated with this container. This allows start/stop calls to
+     * children to be processed in parallel.
+     * @param   startStopThreads    The new number of threads to be used
+     */
+    public void setStartStopThreads(int startStopThreads);
+
 
     /**
      * Add a new child Container to those associated with this Container,

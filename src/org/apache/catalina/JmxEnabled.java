@@ -1,6 +1,7 @@
 package org.apache.catalina;
 
 import javax.management.MBeanRegistration;
+import javax.management.ObjectName;
 
 public interface JmxEnabled extends MBeanRegistration {
 
@@ -20,4 +21,8 @@ public interface JmxEnabled extends MBeanRegistration {
      */
     void setDomain(String domain);
 
+    /**
+     * @return the name under which this component has been registered with JMX.
+     */
+    ObjectName getObjectName();
 }

@@ -1,16 +1,23 @@
 package org.apache.catalina.realm;
 
-import org.apache.catalina.Container;
-import org.apache.catalina.LifecycleException;
-import org.apache.catalina.Realm;
+import org.apache.catalina.*;
 import org.apache.catalina.util.LifecycleMBeanBase;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
+import org.apache.tomcat.util.res.StringManager;
 
 import java.beans.PropertyChangeSupport;
 
 public class RealmBase extends LifecycleMBeanBase implements Realm {
     private static final Log log = LogFactory.getLog(RealmBase.class);
+
+    private CredentialHandler credentialHandler;
+
+
+    /**
+     * The string manager for this package.
+     */
+    protected static final StringManager sm = StringManager.getManager(RealmBase.class);
 
 
     /**
@@ -51,9 +58,21 @@ public class RealmBase extends LifecycleMBeanBase implements Realm {
 
     }
 
+    /**
+     * Prepare for the beginning of active use of the public methods of this
+     * component and implement the requirements of
+     * {@link org.apache.catalina.util.LifecycleBase#startInternal()}.
+     *
+     * @exception LifecycleException if this component detects a fatal error
+     *  that prevents this component from being used
+     */
     @Override
     protected void startInternal() throws LifecycleException {
+        if (credentialHandler == null) {
+            credentialHandler = new MessageDigestCredentialHandler();
+        }
 
+        setState(LifecycleState.STARTING);
     }
 
 

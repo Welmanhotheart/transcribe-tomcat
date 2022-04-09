@@ -377,6 +377,13 @@ public class Catalina {
         System.setErr(new SystemLogHandler(System.err));
     }
 
+    public boolean getUseGeneratedCode() {
+        return this.useGeneratedCode;
+    }
+    public boolean getGenerateCode() {
+        return this.generateCode;
+    }
+
     private void parseServerXml(boolean start) {
         ConfigFileLoader.setSource(new CatalinaBaseConfigurationSource(Bootstrap.getCatalinaBaseFile(), getConfigFile()));
         File file = configFile();

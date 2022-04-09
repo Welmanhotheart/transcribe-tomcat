@@ -33,6 +33,15 @@ public abstract class LifecycleMBeanBase extends LifecycleBase  implements JmxEn
         }
     }
 
+
+    /**
+     * Obtain the name under which this component has been registered with JMX.
+     */
+    @Override
+    public final ObjectName getObjectName() {
+        return oname;
+    }
+
     /**
      * Specify the domain under which this component should be registered. Used
      * with components that cannot (easily) navigate the component hierarchy to

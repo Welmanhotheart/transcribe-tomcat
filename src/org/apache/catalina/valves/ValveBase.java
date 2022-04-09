@@ -2,6 +2,7 @@ package org.apache.catalina.valves;
 
 import org.apache.catalina.*;
 import org.apache.catalina.util.LifecycleMBeanBase;
+import org.apache.juli.logging.Log;
 import org.apache.tomcat.util.res.StringManager;
 
 public abstract class ValveBase extends LifecycleMBeanBase implements Contained, Valve {
@@ -19,6 +20,10 @@ public abstract class ValveBase extends LifecycleMBeanBase implements Contained,
      */
     protected Valve next = null;
 
+    /**
+     * Container log
+     */
+    protected Log containerLog = null;
 
     /**
      * The Container whose pipeline this Valve is a component of.
@@ -84,6 +89,13 @@ public abstract class ValveBase extends LifecycleMBeanBase implements Contained,
     @Override
     public Container getContainer() {
         return container;
+    }
+
+
+    @Override
+    protected void initInternal() throws LifecycleException {
+        super.initInternal();
+        containerLog = getContainer().getLogger();
     }
 
     @Override

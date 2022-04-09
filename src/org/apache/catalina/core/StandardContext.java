@@ -68,9 +68,44 @@ public class StandardContext extends ContainerBase
     private String path = null;
 
     /**
+     * The original document root for this web application.
+     */
+    private String originalDocBase = null;
+
+    /**
+     * The antiResourceLocking flag for this Context.
+     */
+    private boolean antiResourceLocking = false;
+
+
+    /**
+     * Set the original document root for this Context.  This can be an absolute
+     * pathname, a relative pathname, or a URL.
+     *
+     * @param docBase The original document root
+     */
+    public void setOriginalDocBase(String docBase) {
+
+        this.originalDocBase = docBase;
+    }
+
+
+    /**
+     * @return the antiResourceLocking flag for this Context.
+     */
+    public boolean getAntiResourceLocking() {
+        return this.antiResourceLocking;
+    }
+
+    /**
      * Encoded path.
      */
     private String encodedPath = null;
+
+    /**
+     * The "correctly configured" flag for this Context.
+     */
+    private boolean configured = false;
 
     /**
      * The URL of the XML descriptor for this context.
@@ -527,6 +562,25 @@ public class StandardContext extends ContainerBase
             setName(this.path);
         }
     }
+
+    /**
+     * Set the "correctly configured" flag for this Context.  This can be
+     * set to false by startup listeners that detect a fatal configuration
+     * error to avoid the application from being made available.
+     *
+     * @param configured The new correctly configured flag
+     */
+    @Override
+    public void setConfigured(boolean configured) {
+
+        boolean oldConfigured = this.configured;
+        this.configured = configured;
+        support.firePropertyChange("configured",
+                oldConfigured,
+                this.configured);
+
+    }
+
 
     @Override
     public URL getConfigFile() {

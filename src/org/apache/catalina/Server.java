@@ -38,6 +38,21 @@ public interface Server extends Lifecycle{
     public ScheduledExecutorService getUtilityExecutor();
 
     /**
+     * Get the utility thread count.
+     * @return the thread count
+     */
+    public int getUtilityThreads();
+
+
+    /**
+     * Set the utility thread count.
+     * @param utilityThreads the new thread count
+     */
+    public void setUtilityThreads(int utilityThreads);
+
+
+
+    /**
      * Set the shutdown command we are waiting for.
      *
      * @param shutdown The new shutdown command

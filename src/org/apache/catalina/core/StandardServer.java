@@ -393,6 +393,25 @@ public class StandardServer extends LifecycleMBeanBase implements Server {
         return utilityExecutorWrapper;
     }
 
+    @Override
+    public int getUtilityThreads() {
+        return utilityThreads;
+    }
+
+    @Override
+    public void setUtilityThreads(int utilityThreads) {
+        // Use local copies to ensure thread safety
+        int oldUtilityThreads = this.utilityThreads;
+        if (getUtilityThreadsInternal(utilityThreads) < getUtilityThreadsInternal(oldUtilityThreads)) {
+            return;
+        }
+        this.utilityThreads = utilityThreads;
+        if (oldUtilityThreads != utilityThreads && utilityExecutor != null) {
+            reconfigureUtilityExecutor(getUtilityThreadsInternal(utilityThreads));
+        }
+    }
+
+
     /**
      * Set the global naming resources.
      *

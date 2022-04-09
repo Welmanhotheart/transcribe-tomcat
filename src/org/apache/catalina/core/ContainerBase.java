@@ -8,6 +8,7 @@ import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.util.ExceptionUtils;
 import org.apache.tomcat.util.MultiThrowable;
 import org.apache.tomcat.util.res.StringManager;
+import org.apache.tomcat.util.threads.InlineExecutorService;
 
 import javax.management.NotificationBroadcasterSupport;
 import java.beans.PropertyChangeSupport;
@@ -91,6 +92,45 @@ public abstract class ContainerBase extends LifecycleMBeanBase implements Contai
     private int startStopThreads = 1;
     protected ExecutorService startStopExecutor;
 
+
+    // ------------------------------------------------------------- Properties
+
+    @Override
+    public int getStartStopThreads() {
+        return startStopThreads;
+    }
+
+    @Override
+    public void setStartStopThreads(int startStopThreads) {
+        int oldStartStopThreads = this.startStopThreads;
+        this.startStopThreads = startStopThreads;
+
+        // Use local copies to ensure thread safety
+        if (oldStartStopThreads != startStopThreads && startStopExecutor != null) {
+            reconfigureStartStopExecutor(getStartStopThreads());
+        }
+    }
+
+    @Override
+    protected void initInternal() throws LifecycleException {
+        reconfigureStartStopExecutor(getStartStopThreads());
+        super.initInternal();
+    }
+
+
+    private void reconfigureStartStopExecutor(int threads) {
+        if (threads == 1) {
+            // Use a fake executor
+            if (!(startStopExecutor instanceof InlineExecutorService)) {
+                startStopExecutor = new InlineExecutorService();
+            }
+        } else {
+            // Delegate utility execution to the Service
+            Server server = Container.getService(this).getServer();
+            server.setUtilityThreads(threads);
+            startStopExecutor = server.getUtilityExecutor();
+        }
+    }
 
     /**
      * Convenience method, intended for use by the digester to simplify the
@@ -241,7 +281,7 @@ public abstract class ContainerBase extends LifecycleMBeanBase implements Contai
 
     @Override
     public String getName() {
-        return null;
+        return name;
     }
 
     /**
@@ -843,6 +883,7 @@ public abstract class ContainerBase extends LifecycleMBeanBase implements Contai
     public int getBackgroundProcessorDelay() {
         return backgroundProcessorDelay;
     }
+
 
     // ---------------------------- Inner classes used with start/stop Executor
 

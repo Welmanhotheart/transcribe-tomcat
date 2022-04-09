@@ -1,14 +1,14 @@
 package org.apache.catalina.core;
 
-import org.apache.catalina.Container;
-import org.apache.catalina.Globals;
-import org.apache.catalina.Host;
-import org.apache.catalina.Pipeline;
+import org.apache.catalina.*;
+import org.apache.catalina.valves.ErrorReportValve;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
+import org.apache.tomcat.util.ExceptionUtils;
 
 import javax.management.ObjectName;
 import java.io.File;
+import java.io.IOException;
 import java.util.concurrent.ExecutorService;
 import java.util.regex.Pattern;
 
@@ -29,11 +29,50 @@ public class StandardHost extends ContainerBase implements Host {
      */
     private boolean copyXML = false;
 
+    /**
+     * host's default config path
+     */
+    private volatile File hostConfigBase = null;
+
+    /**
+     * The XML root for this Host.
+     */
+    private String xmlBase = null;
 
     /**
      * Unpack WARs property.
      */
     private boolean unpackWARs = true;
+
+    /**
+     * The application root for this Host.
+     */
+    private String appBase = "webapps";
+    private volatile File appBaseFile = null;
+
+    /**
+     * The legacy (Java EE) application root for this Host.
+     */
+    private String legacyAppBase = "webapps-javaee";
+    private volatile File legacyAppBaseFile = null;
+    /**
+     * The deploy on startup flag for this Host.
+     */
+    private boolean deployOnStartup = true;
+
+
+    /**
+     * The Java class name of the default context configuration class
+     * for deployed web applications.
+     */
+    private String configClass =
+            "org.apache.catalina.startup.ContextConfig";
+    /**
+     * The Java class name of the default error reporter implementation class
+     * for deployed web applications.
+     */
+    private String errorReportValveClass =
+            "org.apache.catalina.valves.ErrorReportValve";
 
 
     /**
@@ -70,28 +109,69 @@ public class StandardHost extends ContainerBase implements Host {
     }
 
 
+
+    /**
+     * @return the Java class name of the error report valve class
+     * for new web applications.
+     */
+    public String getErrorReportValveClass() {
+        return this.errorReportValveClass;
+    }
+
+    /**
+     * Start this component and implement the requirements
+     * of {@link org.apache.catalina.util.LifecycleBase#startInternal()}.
+     *
+     * @exception LifecycleException if this component detects a fatal error
+     *  that prevents this component from being used
+     */
     @Override
-    public Container findChild(String name) {
-        return null;
+    protected synchronized void startInternal() throws LifecycleException {
+        System.out.println("standard host starting");
+        // Set error report valve
+        String errorValve = getErrorReportValveClass();
+        if ((errorValve != null) && (!errorValve.equals(""))) {
+            try {
+                boolean found = false;
+                Valve[] valves = getPipeline().getValves();
+                for (Valve valve : valves) {
+                    if (errorValve.equals(valve.getClass().getName())) {
+                        found = true;
+                        break;
+                    }
+                }
+                if(!found) {
+                    Valve valve = ErrorReportValve.class.getName().equals(errorValve) ?
+                            new ErrorReportValve() :
+                            (Valve) Class.forName(errorValve).getConstructor().newInstance();
+                    getPipeline().addValve(valve);
+                }
+            } catch (Throwable t) {
+                ExceptionUtils.handleThrowable(t);
+                log.error(sm.getString(
+                        "standardHost.invalidErrorReportValveClass",
+                        errorValve), t);
+            }
+        }
+        super.startInternal();
     }
 
     @Override
-    public String getMBeanKeyProperties() {
-        return null;
-    }
+    protected String getObjectNameKeyProperties() {
 
+        StringBuilder keyProperties = new StringBuilder("type=Host");
+        keyProperties.append(getMBeanKeyProperties());
+
+        return keyProperties.toString();
+    }
+    /**
+     * @return the canonical, fully qualified, name of the virtual host
+     * this Container represents.
+     */
     @Override
-    public Pipeline getPipeline() {
-        return null;
+    public String getName() {
+        return name;
     }
-
-    @Override
-    public ClassLoader getParentClassLoader() {
-        return null;
-    }
-
-
-
     /**
      * @return <code>true</code> if XML context descriptors should be deployed.
      */
@@ -133,44 +213,113 @@ public class StandardHost extends ContainerBase implements Host {
         return false;
     }
 
+    /**
+     * ({@inheritDoc}
+     */
     @Override
-    public ObjectName getObjectName() {
-        return null;
+    public String getXmlBase() {
+        return this.xmlBase;
     }
 
+    /**
+     * ({@inheritDoc}
+     */
     @Override
     public File getConfigBaseFile() {
-        return null;
+        if (hostConfigBase != null) {
+            return hostConfigBase;
+        }
+        String path = null;
+        if (getXmlBase()!=null) {
+            path = getXmlBase();
+        } else {
+            StringBuilder xmlDir = new StringBuilder("conf");
+            Container parent = getParent();
+            if (parent instanceof Engine) {
+                xmlDir.append('/');
+                xmlDir.append(parent.getName());
+            }
+            xmlDir.append('/');
+            xmlDir.append(getName());
+            path = xmlDir.toString();
+        }
+        File file = new File(path);
+        if (!file.isAbsolute()) {
+            file = new File(getCatalinaBase(), path);
+        }
+        try {
+            file = file.getCanonicalFile();
+        } catch (IOException e) {// ignore
+        }
+        this.hostConfigBase = file;
+        return file;
     }
 
     @Override
     public String getAppBase() {
-        return null;
+        return this.appBase;
     }
 
     @Override
     public File getAppBaseFile() {
-        return null;
+
+        if (appBaseFile != null) {
+            return appBaseFile;
+        }
+
+        File file = new File(getAppBase());
+
+        // If not absolute, make it absolute
+        if (!file.isAbsolute()) {
+            file = new File(getCatalinaBase(), file.getPath());
+        }
+
+        // Make it canonical if possible
+        try {
+            file = file.getCanonicalFile();
+        } catch (IOException ioe) {
+            // Ignore
+        }
+
+        this.appBaseFile = file;
+        return file;
     }
 
+    /**
+     * @return the value of the deploy on startup flag.  If <code>true</code>, it indicates
+     * that this host's child webapps should be discovered and automatically
+     * deployed at startup time.
+     */
+    @Override
+    public boolean getDeployOnStartup() {
+        return this.deployOnStartup;
+    }
+
+
+
+    /**
+     * @return the Java class name of the context configuration class
+     * for new web applications.
+     */
     @Override
     public String getConfigClass() {
-        return null;
+        return this.configClass;
     }
 
     @Override
     public void setAppBase(String appBase) {
-
+        if (appBase.trim().equals("")) {
+            log.warn(sm.getString("standardHost.problematicAppBase", getName()));
+        }
+        String oldAppBase = this.appBase;
+        this.appBase = appBase;
+        support.firePropertyChange("appBase", oldAppBase, this.appBase);
+        this.appBaseFile = null;
     }
 
     @Override
     public String getLegacyAppBase() {
-        return null;
-    }
-
-    @Override
-    public File getLegacyAppBaseFile() {
-        return null;
+        return this.legacyAppBase;
     }
 
     @Override
@@ -189,9 +338,29 @@ public class StandardHost extends ContainerBase implements Host {
     }
 
     @Override
-    public boolean getDeployOnStartup() {
-        return false;
+    public File getLegacyAppBaseFile() {
+        if (legacyAppBaseFile != null) {
+            return legacyAppBaseFile;
+        }
+
+        File file = new File(getLegacyAppBase());
+
+        // If not absolute, make it absolute
+        if (!file.isAbsolute()) {
+            file = new File(getCatalinaBase(), file.getPath());
+        }
+
+        // Make it canonical if possible
+        try {
+            file = file.getCanonicalFile();
+        } catch (IOException ioe) {
+            // Ignore
+        }
+
+        this.legacyAppBaseFile = file;
+        return file;
     }
+
 
     @Override
     public Pattern getDeployIgnorePattern() {
@@ -200,7 +369,7 @@ public class StandardHost extends ContainerBase implements Host {
 
     @Override
     public ExecutorService getStartStopExecutor() {
-        return null;
+        return startStopExecutor;
     }
 
     @Override

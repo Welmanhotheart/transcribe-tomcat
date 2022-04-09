@@ -73,6 +73,13 @@ public interface Host extends Container  {
      */
     public File getLegacyAppBaseFile();
 
+    /**
+     * @return the XML root for this Host.  This can be an absolute
+     * pathname or a relative pathname.
+     * If null, the base path defaults to
+     * ${catalina.base}/conf/&lt;engine name&gt;/&lt;host name&gt; directory
+     */
+    public String getXmlBase();
 
     /**
      * Set the legacy (Java EE) application root for this Host.  This can be an

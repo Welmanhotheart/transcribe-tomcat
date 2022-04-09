@@ -20,6 +20,17 @@ public interface Context extends Container, ContextBind {
      */
     public void setPath(String path);
 
+
+    /**
+     * Set the "correctly configured" flag for this Context.  This can be
+     * set to false by startup listeners that detect a fatal configuration
+     * error to avoid the application from being made available.
+     *
+     * @param configured The new correctly configured flag
+     */
+    public void setConfigured(boolean configured);
+
+
     /**
      * @return the Resources with which this Context is associated.
      */

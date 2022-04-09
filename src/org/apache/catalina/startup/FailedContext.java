@@ -50,6 +50,16 @@ public class FailedContext  extends LifecycleMBeanBase implements Context {
     }
 
     @Override
+    public int getStartStopThreads() {
+        return 0;
+    }
+
+    @Override
+    public void setStartStopThreads(int startStopThreads) {
+
+    }
+
+    @Override
     public void addChild(Container child) {
 
     }
