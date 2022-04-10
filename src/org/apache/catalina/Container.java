@@ -256,6 +256,39 @@ public interface Container extends Lifecycle{
     public void setParent(Container container);
 
     // --------------------------------------------------------- Public Methods
+    /**
+     * Find the configuration path where a configuration resource
+     * is located.
+     * @param container The container
+     * @param resourceName The resource file name
+     * @return the configuration path
+     */
+    public static String getConfigPath(Container container, String resourceName) {
+        StringBuilder result = new StringBuilder();
+        Container host = null;
+        Container engine = null;
+        while (container != null) {
+            if (container instanceof Host) {
+                host = container;
+            } else if (container instanceof Engine) {
+                engine = container;
+            }
+            container = container.getParent();
+        }
+        if (host != null && ((Host) host).getXmlBase() != null) {
+            result.append(((Host) host).getXmlBase()).append('/');
+        } else {
+            result.append("conf/");
+            if (engine != null) {
+                result.append(engine.getName()).append('/');
+            }
+            if (host != null) {
+                result.append(host.getName()).append('/');
+            }
+        }
+        result.append(resourceName);
+        return result.toString();
+    }
 
 
     /**

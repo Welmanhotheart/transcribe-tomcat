@@ -1,21 +1,23 @@
 package org.apache.catalina.core;
 
+import jakarta.servlet.ServletContext;
 import org.apache.catalina.*;
 import org.apache.catalina.deploy.NamingResourcesImpl;
+import org.apache.catalina.org.apache.tomcat.util.descriptor.web.LoginConfig;
 import org.apache.catalina.util.URLEncoder;
+import org.apache.jasper.servlet.jakarta.servlet.ServletContainerInitializer;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.InstanceManager;
 import org.apache.tomcat.util.descriptor.XmlIdentifiers;
+import org.apache.tomcat.util.descriptor.web.*;
 
 import javax.management.*;
 import java.io.File;
+import java.io.IOException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -77,7 +79,8 @@ public class StandardContext extends ContainerBase
      */
     private boolean antiResourceLocking = false;
 
-
+    private long startupTime;
+    private long startTime;
     /**
      * Set the original document root for this Context.  This can be an absolute
      * pathname, a relative pathname, or a URL.
@@ -98,9 +101,30 @@ public class StandardContext extends ContainerBase
     }
 
     /**
+     * Gets the time (in milliseconds) it took to start this context.
+     *
+     * @return Time (in milliseconds) it took to start this context.
+     */
+    public long getStartupTime() {
+        return startupTime;
+    }
+
+    public void setStartupTime(long startupTime) {
+        this.startupTime = startupTime;
+    }
+
+    /**
      * Encoded path.
      */
     private String encodedPath = null;
+
+    /**
+     * The security constraints for this web application.
+     */
+    private volatile SecurityConstraint constraints[] =
+            new SecurityConstraint[0];
+
+    private final Object constraintsLock = new Object();
 
     /**
      * The "correctly configured" flag for this Context.
@@ -111,6 +135,11 @@ public class StandardContext extends ContainerBase
      * The URL of the XML descriptor for this context.
      */
     private URL configFile = null;
+
+    /**
+     * Override the default context xml location.
+     */
+    private String defaultContextXml;
 
     private String webappVersion = "";
 
@@ -182,6 +211,42 @@ public class StandardContext extends ContainerBase
                                         NotificationFilter filter, Object object) throws IllegalArgumentException {
         broadcaster.addNotificationListener(listener,filter,object);
     }
+
+    /**
+     * The pathname to the work directory for this context (relative to
+     * the server's home if not absolute).
+     */
+    private String workDir = null;
+
+    /**
+     * @return the work directory for this Context.
+     */
+    public String getWorkDir() {
+        return this.workDir;
+    }
+
+    /** Get the absolute path to the work dir.
+     *  To avoid duplication.
+     *
+     * @return The work path
+     */
+    public String getWorkPath() {
+        if (getWorkDir() == null) {
+            return null;
+        }
+        File workDir = new File(getWorkDir());
+        if (!workDir.isAbsolute()) {
+            try {
+                workDir = new File(getCatalinaBase().getCanonicalFile(),
+                        getWorkDir());
+            } catch (IOException e) {
+                log.warn(sm.getString("standardContext.workPath", getName()),
+                        e);
+            }
+        }
+        return workDir.getAbsolutePath();
+    }
+
 
     /**
      * Remove a JMX-NotificationListener
@@ -581,10 +646,259 @@ public class StandardContext extends ContainerBase
 
     }
 
+    /**
+     * Add a security constraint to the set for this web application.
+     *
+     * @param constraint the new security constraint
+     */
+    @Override
+    public void addConstraint(SecurityConstraint constraint) {
+
+        // Validate the proposed constraint
+        SecurityCollection collections[] = constraint.findCollections();
+        for (SecurityCollection collection : collections) {
+            String patterns[] = collection.findPatterns();
+            for (int j = 0; j < patterns.length; j++) {
+                patterns[j] = adjustURLPattern(patterns[j]);
+                if (!validateURLPattern(patterns[j])) {
+                    throw new IllegalArgumentException
+                            (sm.getString
+                                    ("standardContext.securityConstraint.pattern",
+                                            patterns[j]));
+                }
+            }
+            if (collection.findMethods().length > 0 &&
+                    collection.findOmittedMethods().length > 0) {
+                throw new IllegalArgumentException(sm.getString(
+                        "standardContext.securityConstraint.mixHttpMethod"));
+            }
+        }
+
+        // Add this constraint to the set for our web application
+        synchronized (constraintsLock) {
+            SecurityConstraint[] results = Arrays.copyOf(constraints, constraints.length + 1);
+            results[constraints.length] = constraint;
+            constraints = results;
+        }
+
+    }
+
+
+    /**
+     * Return the security constraints for this web application.
+     * If there are none, a zero-length array is returned.
+     */
+    @Override
+    public SecurityConstraint[] findConstraints() {
+        return constraints;
+    }
+
+    @Override
+    public void removeErrorPage(ErrorPage errorPage) {
+
+    }
+
+    @Override
+    public FilterDef findFilterDef(String filterName) {
+        return null;
+    }
+
+    @Override
+    public void removeFilterDef(FilterDef filterDef) {
+
+    }
+
+    @Override
+    public String[] findParameters() {
+        return new String[0];
+    }
+
+    @Override
+    public FilterDef[] findFilterDefs() {
+        return new FilterDef[0];
+    }
+
+    @Override
+    public String[] findMimeMappings() {
+        return new String[0];
+    }
+
+    @Override
+    public void removeMimeMapping(String extension) {
+
+    }
+
+    @Override
+    public void removeParameter(String name) {
+
+    }
+
+    @Override
+    public String[] findSecurityRoles() {
+        return new String[0];
+    }
+
+    @Override
+    public void removeSecurityRole(String role) {
+
+    }
+
+    @Override
+    public String[] findServletMappings() {
+        return new String[0];
+    }
+
+    @Override
+    public void removeServletMapping(String pattern) {
+
+    }
+
+    @Override
+    public String[] findWelcomeFiles() {
+        return new String[0];
+    }
+
+    @Override
+    public void removeWelcomeFile(String name) {
+
+    }
+
+    @Override
+    public String[] findWrapperLifecycles() {
+        return new String[0];
+    }
+
+    @Override
+    public void removeWrapperLifecycle(String listener) {
+
+    }
+
+    @Override
+    public String[] findWrapperListeners() {
+        return new String[0];
+    }
+
+    @Override
+    public void removeWrapperListener(String listener) {
+
+    }
+
+    @Override
+    public void addServletContainerInitializer(ServletContainerInitializer sci, Set<Class<?>> classes) {
+
+    }
+
+    @Override
+    public boolean getXmlValidation() {
+        return false;
+    }
+
+    @Override
+    public boolean getXmlNamespaceAware() {
+        return false;
+    }
+
+    @Override
+    public boolean getIgnoreAnnotations() {
+        return false;
+    }
+
+    @Override
+    public void removeFilterMap(FilterMap filterMap) {
+
+    }
+
+    @Override
+    public ErrorPage[] findErrorPages() {
+        return new ErrorPage[0];
+    }
+
+    @Override
+    public void removeConstraint(SecurityConstraint constraint) {
+
+    }
+
+    @Override
+    public void addSecurityRole(String role) {
+
+    }
+
+    @Override
+    public boolean findSecurityRole(String role) {
+        return false;
+    }
+
+    @Override
+    public LoginConfig getLoginConfig() {
+        return null;
+    }
+
+    @Override
+    public void setLoginConfig(LoginConfig config) {
+
+    }
+
+    @Override
+    public Authenticator getAuthenticator() {
+        return null;
+    }
+
+    @Override
+    public boolean getXmlBlockExternal() {
+        return false;
+    }
+
+    @Override
+    public ServletContext getServletContext() {
+        return null;
+    }
+
+    @Override
+    public boolean getLogEffectiveWebXml() {
+        return false;
+    }
+
+    @Override
+    public FilterMap[] findFilterMaps() {
+        return new FilterMap[0];
+    }
+
+    /**
+     * The default context override flag for this web application.
+     */
+    private boolean override = false;
+
+    /**
+     * @return the default context override flag for this web application.
+     */
+    @Override
+    public boolean getOverride() {
+        return this.override;
+    }
+
+    /**
+     * Set the default context override flag for this web application.
+     *
+     * @param override The new override flag
+     */
+    @Override
+    public void setOverride(boolean override) {
+
+        boolean oldOverride = this.override;
+        this.override = override;
+        support.firePropertyChange("override",
+                oldOverride,
+                this.override);
+
+    }
 
     @Override
     public URL getConfigFile() {
         return this.configFile;
+    }
+
+    public String getDefaultContextXml() {
+        return defaultContextXml;
     }
 
     @Override

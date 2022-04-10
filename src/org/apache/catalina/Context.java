@@ -1,10 +1,18 @@
 package org.apache.catalina;
 
+import jakarta.servlet.ServletContext;
 import org.apache.catalina.deploy.NamingResourcesImpl;
+import org.apache.catalina.org.apache.tomcat.util.descriptor.web.LoginConfig;
+import org.apache.jasper.servlet.jakarta.servlet.ServletContainerInitializer;
 import org.apache.tomcat.ContextBind;
 import org.apache.tomcat.InstanceManager;
+import org.apache.tomcat.util.descriptor.web.ErrorPage;
+import org.apache.tomcat.util.descriptor.web.FilterDef;
+import org.apache.tomcat.util.descriptor.web.FilterMap;
+import org.apache.tomcat.util.descriptor.web.SecurityConstraint;
 
 import java.net.URL;
+import java.util.Set;
 
 public interface Context extends Container, ContextBind {
     /**
@@ -20,6 +28,18 @@ public interface Context extends Container, ContextBind {
      */
     public void setPath(String path);
 
+    /**
+     * @return the override flag for this web application.
+     */
+    public boolean getOverride();
+
+
+    /**
+     * Set the override flag for this web application.
+     *
+     * @param override The new override flag
+     */
+    public void setOverride(boolean override);
 
     /**
      * Set the "correctly configured" flag for this Context.  This can be
@@ -30,6 +50,287 @@ public interface Context extends Container, ContextBind {
      */
     public void setConfigured(boolean configured);
 
+    /**
+     * Add a security constraint to the set for this web application.
+     *
+     * @param constraint The security constraint that should be added
+     */
+    public void addConstraint(SecurityConstraint constraint);
+
+    /**
+     * @return the set of security constraints for this web application.
+     * If there are none, a zero-length array is returned.
+     */
+    public SecurityConstraint[] findConstraints();
+
+    /**
+     * Remove the error page for the specified error code or
+     * Java language exception, if it exists; otherwise, no action is taken.
+     *
+     * @param errorPage The error page definition to be removed
+     */
+    public void removeErrorPage(ErrorPage errorPage);
+
+    /**
+     * @return the filter definition for the specified filter name, if any;
+     * otherwise return <code>null</code>.
+     *
+     * @param filterName Filter name to look up
+     */
+    public FilterDef findFilterDef(String filterName);
+
+    /**
+     * Remove the specified filter definition from this Context, if it exists;
+     * otherwise, no action is taken.
+     *
+     * @param filterDef Filter definition to be removed
+     */
+    public void removeFilterDef(FilterDef filterDef);
+
+
+    /**
+     * @return the names of all defined context initialization parameters
+     * for this Context.  If no parameters are defined, a zero-length
+     * array is returned.
+     */
+    public String[] findParameters();
+
+    /**
+     * @return the set of defined filters for this Context.
+     */
+    public FilterDef[] findFilterDefs();
+
+
+    /**
+     * @return the extensions for which MIME mappings are defined.  If there
+     * are none, a zero-length array is returned.
+     */
+    public String[] findMimeMappings();
+
+    /**
+     * Remove the MIME mapping for the specified extension, if it exists;
+     * otherwise, no action is taken.
+     *
+     * @param extension Extension to remove the mapping for
+     */
+    public void removeMimeMapping(String extension);
+
+
+    /**
+     * Remove the context initialization parameter with the specified
+     * name, if it exists; otherwise, no action is taken.
+     *
+     * @param name Name of the parameter to remove
+     */
+    public void removeParameter(String name);
+
+    /**
+     * @return the security roles defined for this application.  If none
+     * have been defined, a zero-length array is returned.
+     */
+    public String[] findSecurityRoles();
+
+    /**
+     * Remove any security role with the specified name.
+     *
+     * @param role Security role to remove
+     */
+    public void removeSecurityRole(String role);
+
+    /**
+     * @return the patterns of all defined servlet mappings for this
+     * Context.  If no mappings are defined, a zero-length array is returned.
+     */
+    public String[] findServletMappings();
+
+    /**
+     * Remove any servlet mapping for the specified pattern, if it exists;
+     * otherwise, no action is taken.
+     *
+     * @param pattern URL pattern of the mapping to remove
+     */
+    public void removeServletMapping(String pattern);
+
+    /**
+     * @return the set of welcome files defined for this Context.  If none are
+     * defined, a zero-length array is returned.
+     */
+    public String[] findWelcomeFiles();
+
+
+    /**
+     * Remove the specified welcome file name from the list recognized
+     * by this Context.
+     *
+     * @param name Name of the welcome file to be removed
+     */
+    public void removeWelcomeFile(String name);
+
+
+    /**
+     * @return the set of LifecycleListener classes that will be added to
+     * newly created Wrappers automatically.
+     */
+    public String[] findWrapperLifecycles();
+
+
+    /**
+     * Remove a class name from the set of LifecycleListener classes that
+     * will be added to newly created Wrappers.
+     *
+     * @param listener Class name of a LifecycleListener class to be removed
+     */
+    public void removeWrapperLifecycle(String listener);
+
+    /**
+     * @return the set of ContainerListener classes that will be added to
+     * newly created Wrappers automatically.
+     */
+    public String[] findWrapperListeners();
+
+
+    /**
+     * Remove a class name from the set of ContainerListener classes that
+     * will be added to newly created Wrappers.
+     *
+     * @param listener Class name of a ContainerListener class to be removed
+     */
+    public void removeWrapperListener(String listener);
+
+    /**
+     * Add a ServletContainerInitializer instance to this web application.
+     *
+     * @param sci       The instance to add
+     * @param classes   The classes in which the initializer expressed an
+     *                  interest
+     */
+    public void addServletContainerInitializer(
+            ServletContainerInitializer sci, Set<Class<?>> classes);
+
+    /**
+     * Will the parsing of web.xml and web-fragment.xml files for this Context
+     * be performed by a validating parser?
+     *
+     * @return true if validation is enabled.
+     */
+    public boolean getXmlValidation();
+
+    /**
+     * Will the parsing of web.xml and web-fragment.xml files for this Context
+     * be performed by a namespace aware parser?
+     *
+     * @return true if namespace awareness is enabled.
+     */
+    public boolean getXmlNamespaceAware();
+
+
+    /**
+     * Determine if annotations parsing is currently disabled
+     *
+     * @return {@code true} if annotation parsing is disabled for this web
+     *         application
+     */
+    public boolean getIgnoreAnnotations();
+
+    /**
+     * Remove a filter mapping from this Context.
+     *
+     * @param filterMap The filter mapping to be removed
+     */
+    public void removeFilterMap(FilterMap filterMap);
+
+
+    /**
+     * @return the set of defined error pages for all specified error codes
+     * and exception types.
+     */
+    public ErrorPage[] findErrorPages();
+    /**
+     * Remove the specified security constraint from this web application.
+     *
+     * @param constraint Constraint to be removed
+     */
+    public void removeConstraint(SecurityConstraint constraint);
+
+
+    /**
+     * Add a new security role for this web application.
+     *
+     * @param role New security role
+     */
+    public void addSecurityRole(String role);
+
+    /**
+     * @return <code>true</code> if the specified security role is defined
+     * for this application; otherwise return <code>false</code>.
+     *
+     * @param role Security role to verify
+     */
+    public boolean findSecurityRole(String role);
+
+
+
+
+
+    /**
+     * @return the login configuration descriptor for this web application.
+     */
+    public LoginConfig getLoginConfig();
+
+
+    /**
+     * Set the login configuration descriptor for this web application.
+     *
+     * @param config The new login configuration
+     */
+    public void setLoginConfig(LoginConfig config);
+
+    /**
+     * @return the {@link Authenticator} that is used by this context. This is
+     *         always non-{@code null} for a started Context
+     */
+    public Authenticator getAuthenticator();
+
+
+    /**
+     * Will the parsing of web.xml, web-fragment.xml, *.tld, *.jspx, *.tagx and
+     * tagplugin.xml files for this Context block the use of external entities?
+     *
+     * @return true if access to external entities is blocked
+     */
+    public boolean getXmlBlockExternal();
+
+    /**
+     * @return the Servlet context for which this Context is a facade.
+     */
+    public ServletContext getServletContext();
+
+    /**
+     * @return the value of the parallel annotation scanning flag.  If true,
+     * it will dispatch scanning to the utility executor.
+     */
+    public boolean getParallelAnnotationScanning();
+
+    /**
+     * Set the parallel annotation scanning value.
+     *
+     * @param parallelAnnotationScanning new parallel annotation scanning flag
+     */
+    public void setParallelAnnotationScanning(boolean parallelAnnotationScanning);
+
+
+    /**
+     * Should the effective web.xml for this context be logged on context start?
+     *
+     * @return true if the reconstructed web.xml that will be used for the
+     *   webapp should be logged
+     */
+    public boolean getLogEffectiveWebXml();
+
+    /**
+     * @return the set of filter mappings for this Context.
+     */
+    public FilterMap[] findFilterMaps();
 
     /**
      * @return the Resources with which this Context is associated.

@@ -72,6 +72,17 @@ public class Digester extends DefaultHandler2 {
     protected Log saxLog = LogFactory.getLog("org.apache.tomcat.util.digester.Digester.sax");
 
     /**
+     * Registered namespaces we are currently processing.  The key is the
+     * namespace prefix that was declared in the document.  The value is an
+     * ArrayStack of the namespace URIs this prefix has been mapped to --
+     * the top Stack element is the most current one.  (This architecture
+     * is required because documents can declare nested uses of the same
+     * prefix for different Namespace URIs).
+     */
+    protected HashMap<String, ArrayStack<String>> namespaces = new HashMap<>();
+
+
+    /**
      * Has this Digester been configured yet.TODO
      */
     protected boolean configured = false;
@@ -134,6 +145,9 @@ public class Digester extends DefaultHandler2 {
     protected ClassLoader classLoader;
     protected SAXParser parser;
 
+    public void setKnown(Object object) {
+        known.add(object);
+    }
     /**
      * Fake attributes map (attributes are often used for object creation).
      */
@@ -148,6 +162,28 @@ public class Digester extends DefaultHandler2 {
 
     public static void setGeneratedCodeLoader(GeneratedCodeLoader loader) {
 
+    }
+
+
+    public void endGeneratingCode() {
+        code = null;
+        known.clear();
+    }
+
+
+    public static void addGeneratedClass(String className) {
+        generatedClasses.add(className);
+    }
+
+    /**
+     * Set the class loader to be used for instantiating application objects
+     * when required.
+     *
+     * @param classLoader The new class loader to use, or <code>null</code>
+     *  to revert to the standard rules
+     */
+    public void setClassLoader(ClassLoader classLoader) {
+        this.classLoader = classLoader;
     }
 
     public static Object loadGeneratedClass(String className) {
@@ -701,6 +737,83 @@ public class Digester extends DefaultHandler2 {
     public void addCallMethod(String pattern, String methodName, int paramCount) {
 
         addRule(pattern, new CallMethodRule(methodName, paramCount));
+
+    }
+
+    /**
+     * <p>Return the top object on the parameters stack without removing it.  If there are
+     * no objects on the stack, return <code>null</code>.</p>
+     *
+     * <p>The parameters stack is used to store <code>CallMethodRule</code> parameters.
+     * See {@link #params}.</p>
+     * @return the top object on the parameters stack
+     */
+    public Object peekParams() {
+        try {
+            return params.peek();
+        } catch (EmptyStackException e) {
+            log.warn(sm.getString("digester.emptyStack"));
+            return null;
+        }
+    }
+
+
+    /**
+     * @return the "namespace aware" flag for parsers we create.
+     */
+    public boolean getNamespaceAware() {
+        return this.namespaceAware;
+    }
+
+
+    /**
+     * Set the "namespace aware" flag for parsers we create.
+     *
+     * @param namespaceAware The new "namespace aware" flag
+     */
+    public void setNamespaceAware(boolean namespaceAware) {
+        this.namespaceAware = namespaceAware;
+    }
+
+    /**
+     * Return the currently mapped namespace URI for the specified prefix,
+     * if any; otherwise return <code>null</code>.  These mappings come and
+     * go dynamically as the document is parsed.
+     *
+     * @param prefix Prefix to look up
+     * @return the namespace URI
+     */
+    public String findNamespaceURI(String prefix) {
+        ArrayStack<String> stack = namespaces.get(prefix);
+        if (stack == null) {
+            return null;
+        }
+        try {
+            return stack.peek();
+        } catch (EmptyStackException e) {
+            return null;
+        }
+    }
+
+    /**
+     * @return the public identifier of the DTD we are currently
+     * parsing under, if any.
+     */
+    public String getPublicId() {
+        return this.publicId;
+    }
+
+    /**
+     * Add a "call parameter" rule for the specified parameters.
+     *
+     * @param pattern Element matching pattern
+     * @param paramIndex Zero-relative parameter index to set
+     *  (from the body of this element)
+     * @see CallParamRule
+     */
+    public void addCallParam(String pattern, int paramIndex) {
+
+        addRule(pattern, new CallParamRule(paramIndex));
 
     }
 

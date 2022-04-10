@@ -384,6 +384,19 @@ public class Catalina {
         return this.generateCode;
     }
 
+    public File getGeneratedCodeLocation() {
+        return this.generatedCodeLocation;
+    }
+
+
+    public void setGeneratedCodeLocation(File generatedCodeLocation) {
+        this.generatedCodeLocation = generatedCodeLocation;
+    }
+
+    public String getGeneratedCodePackage() {
+        return this.generatedCodePackage;
+    }
+
     private void parseServerXml(boolean start) {
         ConfigFileLoader.setSource(new CatalinaBaseConfigurationSource(Bootstrap.getCatalinaBaseFile(), getConfigFile()));
         File file = configFile();

@@ -1,7 +1,10 @@
 package org.apache.tomcat.util.descriptor.web;
 
 import java.io.Serializable;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 
 public class ResourceBase implements Serializable, Injectable {
     /**
@@ -56,4 +59,43 @@ public class ResourceBase implements Serializable, Injectable {
     public void setNamingResources(NamingResources resources) {
         this.resources = resources;
     }
+
+    /**
+     * Holder for our configured properties.
+     */
+    private final Map<String, Object> properties = new HashMap<>();
+
+    /**
+     * @param name The property name
+     * @return a configured property.
+     */
+    public Object getProperty(String name) {
+        return properties.get(name);
+    }
+
+    /**
+     * Set a configured property.
+     * @param name The property name
+     * @param value The property value
+     */
+    public void setProperty(String name, Object value) {
+        properties.put(name, value);
+    }
+
+    /**
+     * Remove a configured property.
+     * @param name The property name
+     */
+    public void removeProperty(String name) {
+        properties.remove(name);
+    }
+
+    /**
+     * List properties.
+     * @return the property names iterator
+     */
+    public Iterator<String> listProperties() {
+        return properties.keySet().iterator();
+    }
+
 }
