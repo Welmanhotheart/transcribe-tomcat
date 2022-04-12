@@ -8,14 +8,15 @@ import org.apache.catalina.core.StandardContext;
 import org.apache.catalina.core.StandardHost;
 import org.apache.catalina.org.apache.tomcat.util.descriptor.web.LoginConfig;
 import org.apache.catalina.util.ContextName;
+import org.apache.catalina.util.Introspection;
 import org.apache.jasper.runtime.ExceptionUtils;
 import org.apache.jasper.servlet.JasperInitializer;
 import org.apache.jasper.servlet.jakarta.servlet.ServletContainerInitializer;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
-import org.apache.tomcat.util.bcel.classfile.ClassParser;
-import org.apache.tomcat.util.bcel.classfile.JavaClass;
+import org.apache.tomcat.util.bcel.classfile.*;
 import org.apache.tomcat.util.buf.UriUtil;
+import org.apache.tomcat.util.descriptor.InputSourceUtil;
 import org.apache.tomcat.util.descriptor.XmlErrorHandler;
 import org.apache.tomcat.util.descriptor.web.*;
 import org.apache.tomcat.util.digester.Digester;
@@ -60,6 +61,12 @@ public class ContextConfig  implements LifecycleListener {
      * The Context we are associated with.
      */
     protected volatile Context context = null;
+
+    /**
+     * Cache of default web.xml fragments per Host
+     */
+    protected static final Map<Host,DefaultWebXmlCacheEntry> hostWebXmlCache =
+            new ConcurrentHashMap<>();
 
     // ----------------------------------------------------- Instance Variables
     /**
@@ -117,6 +124,13 @@ public class ContextConfig  implements LifecycleListener {
      */
     protected final Map<Class<?>, Set<ServletContainerInitializer>> typeInitializerMap =
             new HashMap<>();
+
+    /**
+     * Set used as the value for {@code JavaClassCacheEntry.sciSet} when there
+     * are no SCIs associated with a class.
+     */
+    private static final Set<ServletContainerInitializer> EMPTY_SCI_SET = Collections.emptySet();
+
 
     /**
      * Flag that indicates if at least one {@link HandlesTypes} entry is present
@@ -584,6 +598,35 @@ public class ContextConfig  implements LifecycleListener {
         javaClassCache.clear();
     }
 
+    protected void processAnnotationsWebResource(WebResource webResource,
+                                                 WebXml fragment, boolean handlesTypesOnly,
+                                                 Map<String,JavaClassCacheEntry> javaClassCache) {
+
+        if (webResource.isDirectory()) {
+            WebResource[] webResources =
+                    webResource.getWebResourceRoot().listResources(
+                            webResource.getWebappPath());
+            if (webResources.length > 0) {
+                if (log.isDebugEnabled()) {
+                    log.debug(sm.getString(
+                            "contextConfig.processAnnotationsWebDir.debug",
+                            webResource.getURL()));
+                }
+                for (WebResource r : webResources) {
+                    processAnnotationsWebResource(r, fragment, handlesTypesOnly, javaClassCache);
+                }
+            }
+        } else if (webResource.isFile() &&
+                webResource.getName().endsWith(".class")) {
+            try (InputStream is = webResource.getInputStream()) {
+                processAnnotationsStream(is, fragment, handlesTypesOnly, javaClassCache);
+            } catch (IOException | org.apache.tomcat.util.bcel.classfile.ClassFormatException e) {
+                log.error(sm.getString("contextConfig.inputStreamWebResource",
+                        webResource.getWebappPath()),e);
+            }
+        }
+    }
+
 
     protected static String getContextXmlPackageName(String generatedCodePackage, Container container) {
         StringBuilder result = new StringBuilder();
@@ -851,6 +894,466 @@ public class ContextConfig  implements LifecycleListener {
     }
 
 
+    protected void processClass(WebXml fragment, JavaClass clazz) {
+        AnnotationEntry[] annotationsEntries = clazz.getAnnotationEntries();
+        if (annotationsEntries != null) {
+            String className = clazz.getClassName();
+            for (AnnotationEntry ae : annotationsEntries) {
+                String type = ae.getAnnotationType();
+                if ("Ljakarta/servlet/annotation/WebServlet;".equals(type)) {
+                    processAnnotationWebServlet(className, ae, fragment);
+                }else if ("Ljakarta/servlet/annotation/WebFilter;".equals(type)) {
+                    processAnnotationWebFilter(className, ae, fragment);
+                }else if ("Ljakarta/servlet/annotation/WebListener;".equals(type)) {
+                    fragment.addListener(className);
+                } else {
+                    // Unknown annotation - ignore
+                }
+            }
+        }
+    }
+
+    protected String[] processAnnotationsStringArray(ElementValue ev) {
+        List<String> values = new ArrayList<>();
+        if (ev instanceof ArrayElementValue) {
+            ElementValue[] arrayValues =
+                    ((ArrayElementValue) ev).getElementValuesArray();
+            for (ElementValue value : arrayValues) {
+                values.add(value.stringifyValue());
+            }
+        } else {
+            values.add(ev.stringifyValue());
+        }
+        String[] result = new String[values.size()];
+        return values.toArray(result);
+    }
+
+    /**
+     * process filter annotation and merge with existing one!
+     * FIXME: refactoring method too long and has redundant subroutines with
+     *        processAnnotationWebServlet!
+     * @param className The filter class name
+     * @param ae The filter annotation
+     * @param fragment The corresponding fragment
+     */
+    protected void processAnnotationWebFilter(String className,
+                                              AnnotationEntry ae, WebXml fragment) {
+        String filterName = null;
+        // must search for name s. Spec Servlet API 3.0 - 8.2.3.3.n.ii page 81
+        List<ElementValuePair> evps = ae.getElementValuePairs();
+        for (ElementValuePair evp : evps) {
+            String name = evp.getNameString();
+            if ("filterName".equals(name)) {
+                filterName = evp.getValue().stringifyValue();
+                break;
+            }
+        }
+        if (filterName == null) {
+            // classname is default filterName as annotation has no name!
+            filterName = className;
+        }
+        FilterDef filterDef = fragment.getFilters().get(filterName);
+        FilterMap filterMap = new FilterMap();
+
+        boolean isWebXMLfilterDef;
+        if (filterDef == null) {
+            filterDef = new FilterDef();
+            filterDef.setFilterName(filterName);
+            filterDef.setFilterClass(className);
+            isWebXMLfilterDef = false;
+        } else {
+            isWebXMLfilterDef = true;
+        }
+
+        boolean urlPatternsSet = false;
+        boolean servletNamesSet = false;
+        boolean dispatchTypesSet = false;
+        String[] urlPatterns = null;
+
+        for (ElementValuePair evp : evps) {
+            String name = evp.getNameString();
+            if ("value".equals(name) || "urlPatterns".equals(name)) {
+                if (urlPatternsSet) {
+                    throw new IllegalArgumentException(sm.getString(
+                            "contextConfig.urlPatternValue", "WebFilter", className));
+                }
+                urlPatterns = processAnnotationsStringArray(evp.getValue());
+                urlPatternsSet = urlPatterns.length > 0;
+                for (String urlPattern : urlPatterns) {
+                    // % decoded (if required) using UTF-8
+                    filterMap.addURLPattern(urlPattern);
+                }
+            } else if ("servletNames".equals(name)) {
+                String[] servletNames = processAnnotationsStringArray(evp
+                        .getValue());
+                servletNamesSet = servletNames.length > 0;
+                for (String servletName : servletNames) {
+                    filterMap.addServletName(servletName);
+                }
+            } else if ("dispatcherTypes".equals(name)) {
+                String[] dispatcherTypes = processAnnotationsStringArray(evp
+                        .getValue());
+                dispatchTypesSet = dispatcherTypes.length > 0;
+                for (String dispatcherType : dispatcherTypes) {
+                    filterMap.setDispatcher(dispatcherType);
+                }
+            } else if ("description".equals(name)) {
+                if (filterDef.getDescription() == null) {
+                    filterDef.setDescription(evp.getValue().stringifyValue());
+                }
+            } else if ("displayName".equals(name)) {
+                if (filterDef.getDisplayName() == null) {
+                    filterDef.setDisplayName(evp.getValue().stringifyValue());
+                }
+            } else if ("largeIcon".equals(name)) {
+                if (filterDef.getLargeIcon() == null) {
+                    filterDef.setLargeIcon(evp.getValue().stringifyValue());
+                }
+            } else if ("smallIcon".equals(name)) {
+                if (filterDef.getSmallIcon() == null) {
+                    filterDef.setSmallIcon(evp.getValue().stringifyValue());
+                }
+            } else if ("asyncSupported".equals(name)) {
+                if (filterDef.getAsyncSupported() == null) {
+                    filterDef
+                            .setAsyncSupported(evp.getValue().stringifyValue());
+                }
+            } else if ("initParams".equals(name)) {
+                Map<String, String> initParams = processAnnotationWebInitParams(evp
+                        .getValue());
+                if (isWebXMLfilterDef) {
+                    Map<String, String> webXMLInitParams = filterDef
+                            .getParameterMap();
+                    for (Map.Entry<String, String> entry : initParams
+                            .entrySet()) {
+                        if (webXMLInitParams.get(entry.getKey()) == null) {
+                            filterDef.addInitParameter(entry.getKey(), entry
+                                    .getValue());
+                        }
+                    }
+                } else {
+                    for (Map.Entry<String, String> entry : initParams
+                            .entrySet()) {
+                        filterDef.addInitParameter(entry.getKey(), entry
+                                .getValue());
+                    }
+                }
+
+            }
+        }
+        if (!isWebXMLfilterDef) {
+            fragment.addFilter(filterDef);
+            if (urlPatternsSet || servletNamesSet) {
+                filterMap.setFilterName(filterName);
+                fragment.addFilterMapping(filterMap);
+            }
+        }
+        if (urlPatternsSet || dispatchTypesSet) {
+            Set<FilterMap> fmap = fragment.getFilterMappings();
+            FilterMap descMap = null;
+            for (FilterMap map : fmap) {
+                if (filterName.equals(map.getFilterName())) {
+                    descMap = map;
+                    break;
+                }
+            }
+            if (descMap != null) {
+                String[] urlsPatterns = descMap.getURLPatterns();
+                if (urlPatternsSet
+                        && (urlsPatterns == null || urlsPatterns.length == 0)) {
+                    for (String urlPattern : filterMap.getURLPatterns()) {
+                        // % decoded (if required) using UTF-8
+                        descMap.addURLPattern(urlPattern);
+                    }
+                }
+                String[] dispatcherNames = descMap.getDispatcherNames();
+                if (dispatchTypesSet
+                        && (dispatcherNames == null || dispatcherNames.length == 0)) {
+                    for (String dis : filterMap.getDispatcherNames()) {
+                        descMap.setDispatcher(dis);
+                    }
+                }
+            }
+        }
+
+    }
+
+    protected Map<String,String> processAnnotationWebInitParams(
+            ElementValue ev) {
+        Map<String, String> result = new HashMap<>();
+        if (ev instanceof ArrayElementValue) {
+            ElementValue[] arrayValues =
+                    ((ArrayElementValue) ev).getElementValuesArray();
+            for (ElementValue value : arrayValues) {
+                if (value instanceof AnnotationElementValue) {
+                    List<ElementValuePair> evps = ((AnnotationElementValue) value)
+                            .getAnnotationEntry().getElementValuePairs();
+                    String initParamName = null;
+                    String initParamValue = null;
+                    for (ElementValuePair evp : evps) {
+                        if ("name".equals(evp.getNameString())) {
+                            initParamName = evp.getValue().stringifyValue();
+                        } else if ("value".equals(evp.getNameString())) {
+                            initParamValue = evp.getValue().stringifyValue();
+                        } else {
+                            // Ignore
+                        }
+                    }
+                    result.put(initParamName, initParamValue);
+                }
+            }
+        }
+        return result;
+    }
+
+
+    protected void processAnnotationWebServlet(String className,
+                                               AnnotationEntry ae, WebXml fragment) {
+        String servletName = null;
+        // must search for name s. Spec Servlet API 3.0 - 8.2.3.3.n.ii page 81
+        List<ElementValuePair> evps = ae.getElementValuePairs();
+        for (ElementValuePair evp : evps) {
+            String name = evp.getNameString();
+            if ("name".equals(name)) {
+                servletName = evp.getValue().stringifyValue();
+                break;
+            }
+        }
+        if (servletName == null) {
+            // classname is default servletName as annotation has no name!
+            servletName = className;
+        }
+        ServletDef servletDef = fragment.getServlets().get(servletName);
+
+        boolean isWebXMLservletDef;
+        if (servletDef == null) {
+            servletDef = new ServletDef();
+            servletDef.setServletName(servletName);
+            servletDef.setServletClass(className);
+            isWebXMLservletDef = false;
+        } else {
+            isWebXMLservletDef = true;
+        }
+
+        boolean urlPatternsSet = false;
+        String[] urlPatterns = null;
+
+        // List<ElementValuePair> evps = ae.getElementValuePairs();
+        for (ElementValuePair evp : evps) {
+            String name = evp.getNameString();
+            if ("value".equals(name) || "urlPatterns".equals(name)) {
+                if (urlPatternsSet) {
+                    throw new IllegalArgumentException(sm.getString(
+                            "contextConfig.urlPatternValue", "WebServlet", className));
+                }
+                urlPatternsSet = true;
+                urlPatterns = processAnnotationsStringArray(evp.getValue());
+            } else if ("description".equals(name)) {
+                if (servletDef.getDescription() == null) {
+                    servletDef.setDescription(evp.getValue().stringifyValue());
+                }
+            } else if ("displayName".equals(name)) {
+                if (servletDef.getDisplayName() == null) {
+                    servletDef.setDisplayName(evp.getValue().stringifyValue());
+                }
+            } else if ("largeIcon".equals(name)) {
+                if (servletDef.getLargeIcon() == null) {
+                    servletDef.setLargeIcon(evp.getValue().stringifyValue());
+                }
+            } else if ("smallIcon".equals(name)) {
+                if (servletDef.getSmallIcon() == null) {
+                    servletDef.setSmallIcon(evp.getValue().stringifyValue());
+                }
+            } else if ("asyncSupported".equals(name)) {
+                if (servletDef.getAsyncSupported() == null) {
+                    servletDef.setAsyncSupported(evp.getValue()
+                            .stringifyValue());
+                }
+            } else if ("loadOnStartup".equals(name)) {
+                if (servletDef.getLoadOnStartup() == null) {
+                    servletDef
+                            .setLoadOnStartup(evp.getValue().stringifyValue());
+                }
+            } else if ("initParams".equals(name)) {
+                Map<String, String> initParams = processAnnotationWebInitParams(evp
+                        .getValue());
+                if (isWebXMLservletDef) {
+                    Map<String, String> webXMLInitParams = servletDef
+                            .getParameterMap();
+                    for (Map.Entry<String, String> entry : initParams
+                            .entrySet()) {
+                        if (webXMLInitParams.get(entry.getKey()) == null) {
+                            servletDef.addInitParameter(entry.getKey(), entry
+                                    .getValue());
+                        }
+                    }
+                } else {
+                    for (Map.Entry<String, String> entry : initParams
+                            .entrySet()) {
+                        servletDef.addInitParameter(entry.getKey(), entry
+                                .getValue());
+                    }
+                }
+            }
+        }
+        if (!isWebXMLservletDef && urlPatterns != null) {
+            fragment.addServlet(servletDef);
+        }
+        if (urlPatterns != null) {
+            if (!fragment.getServletMappings().containsValue(servletName)) {
+                for (String urlPattern : urlPatterns) {
+                    fragment.addServletMapping(urlPattern, servletName);
+                }
+            }
+        }
+
+    }
+
+    private void populateSCIsForCacheEntry(JavaClassCacheEntry cacheEntry,
+                                           Map<String,JavaClassCacheEntry> javaClassCache) {
+        Set<ServletContainerInitializer> result = new HashSet<>();
+
+        // Super class
+        String superClassName = cacheEntry.getSuperclassName();
+        JavaClassCacheEntry superClassCacheEntry =
+                javaClassCache.get(superClassName);
+
+        // Avoid an infinite loop with java.lang.Object
+        if (cacheEntry.equals(superClassCacheEntry)) {
+            cacheEntry.setSciSet(EMPTY_SCI_SET);
+            return;
+        }
+
+        // May be null of the class is not present or could not be loaded.
+        if (superClassCacheEntry != null) {
+            if (superClassCacheEntry.getSciSet() == null) {
+                populateSCIsForCacheEntry(superClassCacheEntry, javaClassCache);
+            }
+            result.addAll(superClassCacheEntry.getSciSet());
+        }
+        result.addAll(getSCIsForClass(superClassName));
+
+        // Interfaces
+        for (String interfaceName : cacheEntry.getInterfaceNames()) {
+            JavaClassCacheEntry interfaceEntry =
+                    javaClassCache.get(interfaceName);
+            // A null could mean that the class not present in application or
+            // that there is nothing of interest. Either way, nothing to do here
+            // so move along
+            if (interfaceEntry != null) {
+                if (interfaceEntry.getSciSet() == null) {
+                    populateSCIsForCacheEntry(interfaceEntry, javaClassCache);
+                }
+                result.addAll(interfaceEntry.getSciSet());
+            }
+            result.addAll(getSCIsForClass(interfaceName));
+        }
+
+        cacheEntry.setSciSet(result.isEmpty() ? EMPTY_SCI_SET : result);
+    }
+
+    private Set<ServletContainerInitializer> getSCIsForClass(String className) {
+        for (Map.Entry<Class<?>, Set<ServletContainerInitializer>> entry :
+                typeInitializerMap.entrySet()) {
+            Class<?> clazz = entry.getKey();
+            if (!clazz.isAnnotation()) {
+                if (clazz.getName().equals(className)) {
+                    return entry.getValue();
+                }
+            }
+        }
+        return EMPTY_SCI_SET;
+    }
+
+    /**
+     * For classes packaged with the web application, the class and each
+     * super class needs to be checked for a match with {@link HandlesTypes} or
+     * for an annotation that matches {@link HandlesTypes}.
+     * @param javaClass the class to check
+     * @param javaClassCache a class cache
+     */
+    protected void checkHandlesTypes(JavaClass javaClass,
+                                     Map<String,JavaClassCacheEntry> javaClassCache) {
+
+        // Skip this if we can
+        if (typeInitializerMap.size() == 0) {
+            return;
+        }
+
+        if ((javaClass.getAccessFlags() &
+                org.apache.tomcat.util.bcel.Const.ACC_ANNOTATION) != 0) {
+            // Skip annotations.
+            return;
+        }
+
+        String className = javaClass.getClassName();
+
+        Class<?> clazz = null;
+        if (handlesTypesNonAnnotations) {
+            // This *might* be match for a HandlesType.
+            populateJavaClassCache(className, javaClass, javaClassCache);
+            JavaClassCacheEntry entry = javaClassCache.get(className);
+            if (entry.getSciSet() == null) {
+                try {
+                    populateSCIsForCacheEntry(entry, javaClassCache);
+                } catch (StackOverflowError soe) {
+                    throw new IllegalStateException(sm.getString(
+                            "contextConfig.annotationsStackOverflow",
+                            context.getName(),
+                            classHierarchyToString(className, entry, javaClassCache)));
+                }
+            }
+            if (!entry.getSciSet().isEmpty()) {
+                // Need to try and load the class
+                clazz = Introspection.loadClass(context, className);
+                if (clazz == null) {
+                    // Can't load the class so no point continuing
+                    return;
+                }
+
+                for (ServletContainerInitializer sci : entry.getSciSet()) {
+                    Set<Class<?>> classes = initializerClassMap.get(sci);
+                    if (classes == null) {
+                        classes = new HashSet<>();
+                        initializerClassMap.put(sci, classes);
+                    }
+                    classes.add(clazz);
+                }
+            }
+        }
+
+        if (handlesTypesAnnotations) {
+            AnnotationEntry[] annotationEntries = javaClass.getAllAnnotationEntries();
+            if (annotationEntries != null) {
+                for (Map.Entry<Class<?>, Set<ServletContainerInitializer>> entry :
+                        typeInitializerMap.entrySet()) {
+                    if (entry.getKey().isAnnotation()) {
+                        String entryClassName = entry.getKey().getName();
+                        for (AnnotationEntry annotationEntry : annotationEntries) {
+                            if (entryClassName.equals(
+                                    getClassName(annotationEntry.getAnnotationType()))) {
+                                if (clazz == null) {
+                                    clazz = Introspection.loadClass(
+                                            context, className);
+                                    if (clazz == null) {
+                                        // Can't load the class so no point
+                                        // continuing
+                                        return;
+                                    }
+                                }
+                                for (ServletContainerInitializer sci : entry.getValue()) {
+                                    initializerClassMap.get(sci).add(clazz);
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+
     protected void processAnnotationsFile(File file, WebXml fragment,
                                           boolean handlesTypesOnly, Map<String,JavaClassCacheEntry> javaClassCache) {
 
@@ -1055,6 +1558,31 @@ public class ContextConfig  implements LifecycleListener {
 
     public interface ContextXml {
         public void load(Context context);
+    }
+
+    private static class DefaultWebXmlCacheEntry {
+        private final WebXml webXml;
+        private final long globalTimeStamp;
+        private final long hostTimeStamp;
+
+        public DefaultWebXmlCacheEntry(WebXml webXml, long globalTimeStamp,
+                                       long hostTimeStamp) {
+            this.webXml = webXml;
+            this.globalTimeStamp = globalTimeStamp;
+            this.hostTimeStamp = hostTimeStamp;
+        }
+
+        public WebXml getWebXml() {
+            return webXml;
+        }
+
+        public long getGlobalTimeStamp() {
+            return globalTimeStamp;
+        }
+
+        public long getHostTimeStamp() {
+            return hostTimeStamp;
+        }
     }
 
     static class JavaClassCacheEntry {
@@ -1548,6 +2076,44 @@ public class ContextConfig  implements LifecycleListener {
 
         return source;
     }
+
+    // ------------------------------------------------------------- Properties
+
+    /**
+     * Obtain the location of the default deployment descriptor.
+     *
+     * @return The path to the default web.xml. If not absolute, it is relative
+     *         to CATALINA_BASE.
+     */
+    public String getDefaultWebXml() {
+        if (defaultWebXml == null) {
+            defaultWebXml = Constants.DefaultWebXml;
+        }
+        return defaultWebXml;
+    }
+
+    /**
+     * Identify the default web.xml to be used and obtain an input source for
+     * it.
+     * @return an input source to the default web.xml
+     */
+    protected InputSource getGlobalWebXmlSource() {
+        // Is a default web.xml specified for the Context?
+        if (defaultWebXml == null && context instanceof StandardContext) {
+            defaultWebXml = ((StandardContext) context).getDefaultWebXml();
+        }
+        // Set the default if we don't have any overrides
+        if (defaultWebXml == null) {
+            getDefaultWebXml();
+        }
+
+        // Is it explicitly suppressed, e.g. in embedded environment?
+        if (Constants.NoDefaultWebXml.equals(defaultWebXml)) {
+            return null;
+        }
+        return getWebXmlSource(defaultWebXml, true);
+    }
+
 
     private WebXml getDefaultWebXmlFragment(WebXmlParser webXmlParser) {
 

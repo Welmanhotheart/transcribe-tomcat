@@ -3,6 +3,7 @@ package org.apache.tomcat.util.descriptor.web;
 import jakarta.servlet.ServletContext;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
+import org.apache.tomcat.util.buf.UDecoder;
 import org.apache.tomcat.util.descriptor.XmlIdentifiers;
 import org.apache.tomcat.util.digester.DocumentProperties;
 import org.apache.tomcat.util.res.StringManager;
@@ -178,6 +179,561 @@ public class WebXml extends XmlEncodingBase implements DocumentProperties.Charse
         }
     }
 
+
+    private boolean alwaysAddWelcomeFiles = true;
+
+    /**
+     * When merging from this web.xml, should the welcome files be added to the
+     * target web.xml even if it already contains welcome file definitions.
+     * @param alwaysAddWelcomeFiles <code>true</code> to add welcome files
+     */
+    public void setAlwaysAddWelcomeFiles(boolean alwaysAddWelcomeFiles) {
+        this.alwaysAddWelcomeFiles = alwaysAddWelcomeFiles;
+    }
+
+    /**
+     * Global defaults are overridable but Servlets and Servlet mappings need to
+     * be unique. Duplicates normally trigger an error. This flag indicates if
+     * newly added Servlet elements are marked as overridable.
+     */
+    private boolean overridable = false;
+
+    /**
+     * Global defaults are overridable but Servlets and Servlet mappings need to
+     * be unique. Duplicates normally trigger an error. This flag indicates if
+     * newly added Servlet elements are marked as overridable.
+     */
+    public boolean isOverridable() {
+        return overridable;
+    }
+    public void setOverridable(boolean overridable) {
+        this.overridable = overridable;
+    }
+
+    // listener
+    // TODO: description (multiple with language) is ignored
+    // TODO: display-name (multiple with language) is ignored
+    // TODO: icon (multiple) is ignored
+    private final Set<String> listeners = new LinkedHashSet<>();
+    public void addListener(String className) {
+        listeners.add(className);
+    }
+    public Set<String> getListeners() { return listeners; }
+
+    // servlet
+    // TODO: description (multiple with language) is ignored
+    // TODO: display-name (multiple with language) is ignored
+    // TODO: icon (multiple) is ignored
+    // TODO: init-param/description (multiple with language) is ignored
+    // TODO: security-role-ref/description (multiple with language) is ignored
+    private final Map<String,ServletDef> servlets = new HashMap<>();
+    public void addServlet(ServletDef servletDef) {
+        servlets.put(servletDef.getServletName(), servletDef);
+        if (overridable) {
+            servletDef.setOverridable(overridable);
+        }
+    }
+    public Map<String,ServletDef> getServlets() { return servlets; }
+
+    // servlet-mapping
+    // Note: URLPatterns from web.xml may be URL encoded
+    //       (https://svn.apache.org/r285186)
+    private final Map<String,String> servletMappings = new HashMap<>();
+    private final Set<String> servletMappingNames = new HashSet<>();
+    public void addServletMapping(String urlPattern, String servletName) {
+        addServletMappingDecoded(UDecoder.URLDecode(urlPattern, getCharset()), servletName);
+    }
+    public void addServletMappingDecoded(String urlPattern, String servletName) {
+        String oldServletName = servletMappings.put(urlPattern, servletName);
+        if (oldServletName != null) {
+            // Duplicate mapping. As per clarification from the Servlet EG,
+            // deployment should fail.
+            throw new IllegalArgumentException(sm.getString(
+                    "webXml.duplicateServletMapping", oldServletName,
+                    servletName, urlPattern));
+        }
+        servletMappingNames.add(servletName);
+    }
+    public Map<String,String> getServletMappings() { return servletMappings; }
+
+    // session-config
+    // Digester will check there is only one of these
+    private SessionConfig sessionConfig = new SessionConfig();
+    public void setSessionConfig(SessionConfig sessionConfig) {
+        this.sessionConfig = sessionConfig;
+    }
+    public SessionConfig getSessionConfig() { return sessionConfig; }
+
+    // filter-mapping
+    private final Set<FilterMap> filterMaps = new LinkedHashSet<>();
+    private final Set<String> filterMappingNames = new HashSet<>();
+    public void addFilterMapping(FilterMap filterMap) {
+        filterMap.setCharset(getCharset());
+        filterMaps.add(filterMap);
+        filterMappingNames.add(filterMap.getFilterName());
+    }
+    public Set<FilterMap> getFilterMappings() { return filterMaps; }
+
+
+    /**
+     * Merge the supplied web fragments into this main web.xml.
+     *
+     * @param fragments     The fragments to merge in
+     * @return <code>true</code> if merge is successful, else
+     *         <code>false</code>
+     */
+    public boolean merge(Set<WebXml> fragments) {
+        // As far as possible, process in alphabetical order so it is easy to
+        // check everything is present
+
+        // Merge rules vary from element to element. See SRV.8.2.3
+
+        WebXml temp = new WebXml();
+
+        for (WebXml fragment : fragments) {
+            if (!mergeMap(fragment.getContextParams(), contextParams,
+                    temp.getContextParams(), fragment, "Context Parameter")) {
+                return false;
+            }
+        }
+        contextParams.putAll(temp.getContextParams());
+
+        if (displayName == null) {
+            for (WebXml fragment : fragments) {
+                String value = fragment.getDisplayName();
+                if (value != null) {
+                    if (temp.getDisplayName() == null) {
+                        temp.setDisplayName(value);
+                    } else {
+                        log.error(sm.getString(
+                                "webXml.mergeConflictDisplayName",
+                                fragment.getName(),
+                                fragment.getURL()));
+                        return false;
+                    }
+                }
+            }
+            displayName = temp.getDisplayName();
+        }
+
+        // Note: Not permitted in fragments but we also use fragments for
+        //       per-Host and global defaults so they may appear there
+        if (!denyUncoveredHttpMethods) {
+            for (WebXml fragment : fragments) {
+                if (fragment.getDenyUncoveredHttpMethods()) {
+                    denyUncoveredHttpMethods = true;
+                    break;
+                }
+            }
+        }
+        if (requestCharacterEncoding == null) {
+            for (WebXml fragment : fragments) {
+                if (fragment.getRequestCharacterEncoding() != null) {
+                    requestCharacterEncoding = fragment.getRequestCharacterEncoding();
+                }
+            }
+        }
+        if (responseCharacterEncoding == null) {
+            for (WebXml fragment : fragments) {
+                if (fragment.getResponseCharacterEncoding() != null) {
+                    responseCharacterEncoding = fragment.getResponseCharacterEncoding();
+                }
+            }
+        }
+
+        if (distributable) {
+            for (WebXml fragment : fragments) {
+                if (!fragment.isDistributable()) {
+                    distributable = false;
+                    break;
+                }
+            }
+        }
+
+        for (WebXml fragment : fragments) {
+            if (!mergeResourceMap(fragment.getEjbLocalRefs(), ejbLocalRefs,
+                    temp.getEjbLocalRefs(), fragment)) {
+                return false;
+            }
+        }
+        ejbLocalRefs.putAll(temp.getEjbLocalRefs());
+
+        for (WebXml fragment : fragments) {
+            if (!mergeResourceMap(fragment.getEjbRefs(), ejbRefs,
+                    temp.getEjbRefs(), fragment)) {
+                return false;
+            }
+        }
+        ejbRefs.putAll(temp.getEjbRefs());
+
+        for (WebXml fragment : fragments) {
+            if (!mergeResourceMap(fragment.getEnvEntries(), envEntries,
+                    temp.getEnvEntries(), fragment)) {
+                return false;
+            }
+        }
+        envEntries.putAll(temp.getEnvEntries());
+
+        for (WebXml fragment : fragments) {
+            if (!mergeMap(fragment.getErrorPages(), errorPages,
+                    temp.getErrorPages(), fragment, "Error Page")) {
+                return false;
+            }
+        }
+        errorPages.putAll(temp.getErrorPages());
+
+        // As per 'clarification' from the Servlet EG, filter definitions in the
+        // main web.xml override those in fragments and those in fragments
+        // override those in annotations
+        List<FilterMap> filterMapsToAdd = new ArrayList<>();
+        for (WebXml fragment : fragments) {
+            for (FilterMap filterMap : fragment.getFilterMappings()) {
+                if (!filterMappingNames.contains(filterMap.getFilterName())) {
+                    filterMapsToAdd.add(filterMap);
+                }
+            }
+        }
+        for (FilterMap filterMap : filterMapsToAdd) {
+            // Additive
+            addFilterMapping(filterMap);
+        }
+
+        for (WebXml fragment : fragments) {
+            for (Map.Entry<String,FilterDef> entry :
+                    fragment.getFilters().entrySet()) {
+                if (filters.containsKey(entry.getKey())) {
+                    mergeFilter(entry.getValue(),
+                            filters.get(entry.getKey()), false);
+                } else {
+                    if (temp.getFilters().containsKey(entry.getKey())) {
+                        if (!(mergeFilter(entry.getValue(),
+                                temp.getFilters().get(entry.getKey()), true))) {
+                            log.error(sm.getString(
+                                    "webXml.mergeConflictFilter",
+                                    entry.getKey(),
+                                    fragment.getName(),
+                                    fragment.getURL()));
+
+                            return false;
+                        }
+                    } else {
+                        temp.getFilters().put(entry.getKey(), entry.getValue());
+                    }
+                }
+            }
+        }
+        filters.putAll(temp.getFilters());
+
+        for (WebXml fragment : fragments) {
+            for (JspPropertyGroup jspPropertyGroup :
+                    fragment.getJspPropertyGroups()) {
+                // Always additive
+                addJspPropertyGroup(jspPropertyGroup);
+            }
+        }
+
+        for (WebXml fragment : fragments) {
+            for (String listener : fragment.getListeners()) {
+                // Always additive
+                addListener(listener);
+            }
+        }
+
+        for (WebXml fragment : fragments) {
+            if (!mergeMap(fragment.getLocaleEncodingMappings(),
+                    localeEncodingMappings, temp.getLocaleEncodingMappings(),
+                    fragment, "Locale Encoding Mapping")) {
+                return false;
+            }
+        }
+        localeEncodingMappings.putAll(temp.getLocaleEncodingMappings());
+
+        if (getLoginConfig() == null) {
+            LoginConfig tempLoginConfig = null;
+            for (WebXml fragment : fragments) {
+                LoginConfig fragmentLoginConfig = fragment.loginConfig;
+                if (fragmentLoginConfig != null) {
+                    if (tempLoginConfig == null ||
+                            fragmentLoginConfig.equals(tempLoginConfig)) {
+                        tempLoginConfig = fragmentLoginConfig;
+                    } else {
+                        log.error(sm.getString(
+                                "webXml.mergeConflictLoginConfig",
+                                fragment.getName(),
+                                fragment.getURL()));
+                    }
+                }
+            }
+            loginConfig = tempLoginConfig;
+        }
+
+        for (WebXml fragment : fragments) {
+            if (!mergeResourceMap(fragment.getMessageDestinationRefs(), messageDestinationRefs,
+                    temp.getMessageDestinationRefs(), fragment)) {
+                return false;
+            }
+        }
+        messageDestinationRefs.putAll(temp.getMessageDestinationRefs());
+
+        for (WebXml fragment : fragments) {
+            if (!mergeResourceMap(fragment.getMessageDestinations(), messageDestinations,
+                    temp.getMessageDestinations(), fragment)) {
+                return false;
+            }
+        }
+        messageDestinations.putAll(temp.getMessageDestinations());
+
+        for (WebXml fragment : fragments) {
+            if (!mergeMap(fragment.getMimeMappings(), mimeMappings,
+                    temp.getMimeMappings(), fragment, "Mime Mapping")) {
+                return false;
+            }
+        }
+        mimeMappings.putAll(temp.getMimeMappings());
+
+        for (WebXml fragment : fragments) {
+            if (!mergeResourceMap(fragment.getResourceEnvRefs(), resourceEnvRefs,
+                    temp.getResourceEnvRefs(), fragment)) {
+                return false;
+            }
+        }
+        resourceEnvRefs.putAll(temp.getResourceEnvRefs());
+
+        for (WebXml fragment : fragments) {
+            if (!mergeResourceMap(fragment.getResourceRefs(), resourceRefs,
+                    temp.getResourceRefs(), fragment)) {
+                return false;
+            }
+        }
+        resourceRefs.putAll(temp.getResourceRefs());
+
+        for (WebXml fragment : fragments) {
+            for (SecurityConstraint constraint : fragment.getSecurityConstraints()) {
+                // Always additive
+                addSecurityConstraint(constraint);
+            }
+        }
+
+        for (WebXml fragment : fragments) {
+            for (String role : fragment.getSecurityRoles()) {
+                // Always additive
+                addSecurityRole(role);
+            }
+        }
+
+        for (WebXml fragment : fragments) {
+            if (!mergeResourceMap(fragment.getServiceRefs(), serviceRefs,
+                    temp.getServiceRefs(), fragment)) {
+                return false;
+            }
+        }
+        serviceRefs.putAll(temp.getServiceRefs());
+
+        // As per 'clarification' from the Servlet EG, servlet definitions and
+        // mappings in the main web.xml override those in fragments and those in
+        // fragments override those in annotations
+        // Skip servlet definitions and mappings from fragments that are
+        // defined in web.xml
+        List<Map.Entry<String,String>> servletMappingsToAdd = new ArrayList<>();
+        for (WebXml fragment : fragments) {
+            for (Map.Entry<String,String> servletMap :
+                    fragment.getServletMappings().entrySet()) {
+                if (!servletMappingNames.contains(servletMap.getValue()) &&
+                        !servletMappings.containsKey(servletMap.getKey())) {
+                    servletMappingsToAdd.add(servletMap);
+                }
+            }
+        }
+
+        // Add fragment mappings
+        for (Map.Entry<String,String> mapping : servletMappingsToAdd) {
+            addServletMappingDecoded(mapping.getKey(), mapping.getValue());
+        }
+
+        for (WebXml fragment : fragments) {
+            for (Map.Entry<String,ServletDef> entry :
+                    fragment.getServlets().entrySet()) {
+                if (servlets.containsKey(entry.getKey())) {
+                    mergeServlet(entry.getValue(),
+                            servlets.get(entry.getKey()), false);
+                } else {
+                    if (temp.getServlets().containsKey(entry.getKey())) {
+                        if (!(mergeServlet(entry.getValue(),
+                                temp.getServlets().get(entry.getKey()), true))) {
+                            log.error(sm.getString(
+                                    "webXml.mergeConflictServlet",
+                                    entry.getKey(),
+                                    fragment.getName(),
+                                    fragment.getURL()));
+
+                            return false;
+                        }
+                    } else {
+                        temp.getServlets().put(entry.getKey(), entry.getValue());
+                    }
+                }
+            }
+        }
+        servlets.putAll(temp.getServlets());
+
+        if (sessionConfig.getSessionTimeout() == null) {
+            for (WebXml fragment : fragments) {
+                Integer value = fragment.getSessionConfig().getSessionTimeout();
+                if (value != null) {
+                    if (temp.getSessionConfig().getSessionTimeout() == null) {
+                        temp.getSessionConfig().setSessionTimeout(value.toString());
+                    } else if (value.equals(
+                            temp.getSessionConfig().getSessionTimeout())) {
+                        // Fragments use same value - no conflict
+                    } else {
+                        log.error(sm.getString(
+                                "webXml.mergeConflictSessionTimeout",
+                                fragment.getName(),
+                                fragment.getURL()));
+                        return false;
+                    }
+                }
+            }
+            if (temp.getSessionConfig().getSessionTimeout() != null) {
+                sessionConfig.setSessionTimeout(
+                        temp.getSessionConfig().getSessionTimeout().toString());
+            }
+        }
+
+        if (sessionConfig.getCookieName() == null) {
+            for (WebXml fragment : fragments) {
+                String value = fragment.getSessionConfig().getCookieName();
+                if (value != null) {
+                    if (temp.getSessionConfig().getCookieName() == null) {
+                        temp.getSessionConfig().setCookieName(value);
+                    } else if (value.equals(
+                            temp.getSessionConfig().getCookieName())) {
+                        // Fragments use same value - no conflict
+                    } else {
+                        log.error(sm.getString(
+                                "webXml.mergeConflictSessionCookieName",
+                                fragment.getName(),
+                                fragment.getURL()));
+                        return false;
+                    }
+                }
+            }
+            sessionConfig.setCookieName(
+                    temp.getSessionConfig().getCookieName());
+        }
+
+        Map<String,String> mainAttributes = getSessionConfig().getCookieAttributes();
+        Map<String,String> mergedFragmentAttributes = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        for (WebXml fragment : fragments) {
+            for (Map.Entry<String,String> attribute : fragment.getSessionConfig().getCookieAttributes().entrySet()) {
+                // Skip any attribute in a fragment that is defined in the main web.xml
+                if (!mainAttributes.containsKey(attribute.getKey())) {
+                    if (mergedFragmentAttributes.containsKey(attribute.getKey())) {
+                        // Attribute has already been seen.
+                        // If values are the same, NO-OP. If they are different
+                        // trigger a merge error
+                        if (!mergedFragmentAttributes.get(attribute.getKey()).equals(attribute.getValue())) {
+                            log.error(sm.getString(
+                                    "webXml.mergeConflictSessionCookieAttributes",
+                                    fragment.getName(),
+                                    fragment.getURL()));
+                            return false;
+                        }
+                    } else {
+                        // First time this attribute has been seen. Add it.
+                        mergedFragmentAttributes.put(attribute.getKey(), attribute.getValue());
+                    }
+                }
+            }
+        }
+        mainAttributes.putAll(mergedFragmentAttributes);
+
+        if (sessionConfig.getSessionTrackingModes().size() == 0) {
+            for (WebXml fragment : fragments) {
+                EnumSet<SessionTrackingMode> value =
+                        fragment.getSessionConfig().getSessionTrackingModes();
+                if (value.size() > 0) {
+                    if (temp.getSessionConfig().getSessionTrackingModes().size() == 0) {
+                        temp.getSessionConfig().getSessionTrackingModes().addAll(value);
+                    } else if (value.equals(
+                            temp.getSessionConfig().getSessionTrackingModes())) {
+                        // Fragments use same value - no conflict
+                    } else {
+                        log.error(sm.getString(
+                                "webXml.mergeConflictSessionTrackingMode",
+                                fragment.getName(),
+                                fragment.getURL()));
+                        return false;
+                    }
+                }
+            }
+            sessionConfig.getSessionTrackingModes().addAll(
+                    temp.getSessionConfig().getSessionTrackingModes());
+        }
+
+        for (WebXml fragment : fragments) {
+            if (!mergeMap(fragment.getTaglibs(), taglibs,
+                    temp.getTaglibs(), fragment, "Taglibs")) {
+                return false;
+            }
+        }
+        taglibs.putAll(temp.getTaglibs());
+
+        for (WebXml fragment : fragments) {
+            if (fragment.alwaysAddWelcomeFiles || welcomeFiles.size() == 0) {
+                for (String welcomeFile : fragment.getWelcomeFiles()) {
+                    addWelcomeFile(welcomeFile);
+                }
+            }
+        }
+
+        if (postConstructMethods.isEmpty()) {
+            for (WebXml fragment : fragments) {
+                if (!mergeLifecycleCallback(fragment.getPostConstructMethods(),
+                        temp.getPostConstructMethods(), fragment,
+                        "Post Construct Methods")) {
+                    return false;
+                }
+            }
+            postConstructMethods.putAll(temp.getPostConstructMethods());
+        }
+
+        if (preDestroyMethods.isEmpty()) {
+            for (WebXml fragment : fragments) {
+                if (!mergeLifecycleCallback(fragment.getPreDestroyMethods(),
+                        temp.getPreDestroyMethods(), fragment,
+                        "Pre Destroy Methods")) {
+                    return false;
+                }
+            }
+            preDestroyMethods.putAll(temp.getPreDestroyMethods());
+        }
+
+        return true;
+    }
+
+    // filter
+    // TODO: Should support multiple description elements with language
+    // TODO: Should support multiple display-name elements with language
+    // TODO: Should support multiple icon elements
+    // TODO: Description for init-param is ignored
+    private final Map<String,FilterDef> filters = new LinkedHashMap<>();
+    public void addFilter(FilterDef filter) {
+        if (filters.containsKey(filter.getFilterName())) {
+            // Filter names must be unique within a web(-fragment).xml
+            throw new IllegalArgumentException(
+                    sm.getString("webXml.duplicateFilter",
+                            filter.getFilterName()));
+        }
+        filters.put(filter.getFilterName(), filter);
+    }
+    public Map<String,FilterDef> getFilters() { return filters; }
+    // mime-mapping
+    private final Map<String,String> mimeMappings = new HashMap<>();
+    public void addMimeMapping(String extension, String mimeType) {
+        mimeMappings.put(extension, mimeType);
+    }
+    public Map<String,String> getMimeMappings() { return mimeMappings; }
 
     // Optional publicId attribute
     private String publicId = null;

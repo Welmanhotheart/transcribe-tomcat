@@ -22,4 +22,14 @@ public interface WebResourceRoot extends Lifecycle{
      */
     void backgroundProcess();
 
+    /**
+     * Obtain the list of all of the WebResources in the specified directory.
+     *
+     * @param path  The path for the resource of interest relative to the root
+     *              of the web application. It must start with '/'.
+     *
+     * @return  The list of resources. If path does not refer to a directory
+     *          then a zero length array will be returned.
+     */
+    WebResource[] listResources(String path);
 }
