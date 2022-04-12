@@ -46,4 +46,19 @@ public class ContextService  extends ResourceBase{
     public void setServiceqnameLocalpart(String localpart) {
         this.serviceqname[1] = localpart;
     }
+
+    /**
+     * Contains the location (relative to the root of
+     * the module) of the web service WSDL description.
+     */
+    private String wsdlfile = null;
+
+    public String getWsdlfile() {
+        return this.wsdlfile;
+    }
+
+    public void setWsdlfile(String wsdlfile) {
+        this.wsdlfile = wsdlfile;
+    }
+
 }

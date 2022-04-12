@@ -121,6 +121,12 @@ public interface Server extends Lifecycle{
     public void setGlobalNamingResources
     (NamingResourcesImpl globalNamingResources);
 
+    // ------------------------------------------------------------- Properties
+
+    /**
+     * @return the global naming resources.
+     */
+    public NamingResourcesImpl getGlobalNamingResources();
 
     /**
      * Find the specified Service

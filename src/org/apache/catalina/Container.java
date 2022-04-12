@@ -1,9 +1,12 @@
 package org.apache.catalina;
 
+import jakarta.servlet.ServletRegistration;
+import jakarta.servlet.ServletSecurityElement;
 import org.apache.juli.logging.Log;
 
 import javax.management.ObjectName;
 import java.io.File;
+import java.util.Set;
 
 public interface Container extends Lifecycle{
 
@@ -129,6 +132,17 @@ public interface Container extends Lifecycle{
      *  child Containers
      */
     public void addChild(Container child);
+
+    /**
+     * Notification that Servlet security has been dynamically set in a
+     * {@link jakarta.servlet.ServletRegistration.Dynamic}
+     * @param registration Servlet security was modified for
+     * @param servletSecurityElement new security constraints for this Servlet
+     * @return urls currently mapped to this registration that are already
+     *         present in web.xml
+     */
+    Set<String> addServletSecurity(ServletRegistration.Dynamic registration,
+                                   ServletSecurityElement servletSecurityElement);
 
     /**
      * Obtain the location of CATALINA_BASE.

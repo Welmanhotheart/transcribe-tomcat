@@ -43,4 +43,15 @@ public interface Wrapper extends Container {
      */
     public String getRunAs();
 
+    /**
+     * @return the fully qualified servlet class name for this servlet.
+     */
+    public String getServletClass();
+
+    /**
+     * Set the run-as identity for this servlet.
+     *
+     * @param runAs New run-as identity value
+     */
+    public void setRunAs(String runAs);
 }

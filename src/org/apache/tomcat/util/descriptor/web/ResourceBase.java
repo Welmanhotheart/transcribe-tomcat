@@ -98,4 +98,30 @@ public class ResourceBase implements Serializable, Injectable {
         return properties.keySet().iterator();
     }
 
+    /**
+     * The description of this resource.
+     */
+    private String description = null;
+
+    public String getDescription() {
+        return this.description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    private String lookupName = null;
+
+    public String getLookupName() {
+        return lookupName;
+    }
+
+    public void setLookupName(String lookupName) {
+        if (lookupName == null || lookupName.length() == 0) {
+            this.lookupName = null;
+            return;
+        }
+        this.lookupName = lookupName;
+    }
 }

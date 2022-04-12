@@ -80,6 +80,12 @@ public interface Context extends Container, ContextBind {
     public FilterDef findFilterDef(String filterName);
 
     /**
+     * @return the set of application listener class names configured
+     * for this application.
+     */
+    public String[] findApplicationListeners();
+
+    /**
      * Remove the specified filter definition from this Context, if it exists;
      * otherwise, no action is taken.
      *

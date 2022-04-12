@@ -15,10 +15,7 @@ import java.beans.PropertyChangeSupport;
 import java.io.Serializable;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 public class NamingResourcesImpl extends LifecycleMBeanBase
         implements Serializable, NamingResources {
@@ -40,6 +37,27 @@ public class NamingResourcesImpl extends LifecycleMBeanBase
      * Set of naming entries, keyed by name.
      */
     private final Set<String> entries = new HashSet<>();
+
+    /**
+     * The resource environment references for this web application,
+     * keyed by name.
+     */
+    private final HashMap<String, ContextResourceEnvRef> resourceEnvRefs =
+            new HashMap<>();
+
+
+    /**
+     * The web service references for this web application, keyed by name.
+     */
+    private final HashMap<String, ContextService> services =
+            new HashMap<>();
+
+    /**
+     * The message destination references for this web application,
+     * keyed by name.
+     */
+    private final Map<String, MessageDestinationRef> mdrs = new HashMap<>();
+
 
     /**
      * The resource references for this web application, keyed by name.
@@ -275,6 +293,257 @@ public class NamingResourcesImpl extends LifecycleMBeanBase
             }
         }
         return null;
+    }
+
+    /**
+     * @return the environment entry with the specified name, if any;
+     * otherwise, return <code>null</code>.
+     *
+     * @param name Name of the desired environment entry
+     */
+    public ContextEnvironment findEnvironment(String name) {
+
+        synchronized (envs) {
+            return envs.get(name);
+        }
+
+    }
+
+    /**
+     * @return the resource link with the specified name, if any;
+     * otherwise return <code>null</code>.
+     *
+     * @param name Name of the desired resource link
+     */
+    public ContextResourceLink findResourceLink(String name) {
+
+        synchronized (resourceLinks) {
+            return resourceLinks.get(name);
+        }
+
+    }
+
+    // Container should be an instance of Server or Context. If it is anything
+    // else, return null which will trigger a NPE.
+    private Server getServer() {
+        if (container instanceof Server) {
+            return (Server) container;
+        }
+        if (container instanceof Context) {
+            // Could do this in one go. Lots of casts so split out for clarity
+            Engine engine =
+                    (Engine) ((Context) container).getParent().getParent();
+            return engine.getService().getServer();
+        }
+        return null;
+    }
+
+    /**
+     * Add a message destination reference for this web application.
+     *
+     * @param mdr New message destination reference
+     */
+    public void addMessageDestinationRef(MessageDestinationRef mdr) {
+
+        if (entries.contains(mdr.getName())) {
+            return;
+        } else {
+            if (!checkResourceType(mdr)) {
+                throw new IllegalArgumentException(sm.getString(
+                        "namingResources.resourceTypeFail", mdr.getName(),
+                        mdr.getType()));
+            }
+            entries.add(mdr.getName());
+        }
+
+        synchronized (mdrs) {
+            mdr.setNamingResources(this);
+            mdrs.put(mdr.getName(), mdr);
+        }
+        support.firePropertyChange("messageDestinationRef", null, mdr);
+
+    }
+
+
+
+    /**
+     * Remove any resource link with the specified name.
+     *
+     * @param name Name of the resource link to remove
+     */
+    @Override
+    public void removeResourceLink(String name) {
+
+        entries.remove(name);
+
+        ContextResourceLink resourceLink = null;
+        synchronized (resourceLinks) {
+            resourceLink = resourceLinks.remove(name);
+        }
+        if (resourceLink != null) {
+            support.firePropertyChange("resourceLink", resourceLink, null);
+            // De-register with JMX
+            if (resourceRequireExplicitRegistration) {
+                try {
+                    MBeanUtils.destroyMBean(resourceLink);
+                } catch (Exception e) {
+                    log.warn(sm.getString("namingResources.mbeanDestroyFail",
+                            resourceLink.getName()), e);
+                }
+            }
+            resourceLink.setNamingResources(null);
+        }
+    }
+
+
+    /**
+     * Add an environment entry for this web application.
+     *
+     * @param environment New environment entry
+     */
+    @Override
+    public void addEnvironment(ContextEnvironment environment) {
+
+        if (entries.contains(environment.getName())) {
+            ContextEnvironment ce = findEnvironment(environment.getName());
+            ContextResourceLink rl = findResourceLink(environment.getName());
+            if (ce != null) {
+                if (ce.getOverride()) {
+                    removeEnvironment(environment.getName());
+                } else {
+                    return;
+                }
+            } else if (rl != null) {
+                // Link. Need to look at the global resources
+                NamingResourcesImpl global = getServer().getGlobalNamingResources();
+                if (global.findEnvironment(rl.getGlobal()) != null) {
+                    if (global.findEnvironment(rl.getGlobal()).getOverride()) {
+                        removeResourceLink(environment.getName());
+                    } else {
+                        return;
+                    }
+                }
+            } else {
+                // It exists but it isn't an env or a res link...
+                return;
+            }
+        }
+
+        List<InjectionTarget> injectionTargets = environment.getInjectionTargets();
+        String value = environment.getValue();
+        String lookupName = environment.getLookupName();
+
+        // Entries with injection targets but no value are effectively ignored
+        if (injectionTargets != null && injectionTargets.size() > 0 &&
+                (value == null || value.length() == 0)) {
+            return;
+        }
+
+        // Entries with lookup-name and value are an error (EE.5.4.1.3)
+        if (value != null && value.length() > 0 && lookupName != null && lookupName.length() > 0) {
+            throw new IllegalArgumentException(
+                    sm.getString("namingResources.envEntryLookupValue", environment.getName()));
+        }
+
+        if (!checkResourceType(environment)) {
+            throw new IllegalArgumentException(sm.getString(
+                    "namingResources.resourceTypeFail", environment.getName(),
+                    environment.getType()));
+        }
+
+        entries.add(environment.getName());
+
+        synchronized (envs) {
+            environment.setNamingResources(this);
+            envs.put(environment.getName(), environment);
+        }
+        support.firePropertyChange("environment", null, environment);
+
+        // Register with JMX
+        if (resourceRequireExplicitRegistration) {
+            try {
+                MBeanUtils.createMBean(environment);
+            } catch (Exception e) {
+                log.warn(sm.getString("namingResources.mbeanCreateFail",
+                        environment.getName()), e);
+            }
+        }
+    }
+
+    /**
+     * Add a web service reference for this web application.
+     *
+     * @param service New web service reference
+     */
+    public void addService(ContextService service) {
+
+        if (entries.contains(service.getName())) {
+            return;
+        } else {
+            entries.add(service.getName());
+        }
+
+        synchronized (services) {
+            service.setNamingResources(this);
+            services.put(service.getName(), service);
+        }
+        support.firePropertyChange("service", null, service);
+
+    }
+
+    /**
+     * Remove any environment entry with the specified name.
+     *
+     * @param name Name of the environment entry to remove
+     */
+    @Override
+    public void removeEnvironment(String name) {
+
+        entries.remove(name);
+
+        ContextEnvironment environment = null;
+        synchronized (envs) {
+            environment = envs.remove(name);
+        }
+        if (environment != null) {
+            support.firePropertyChange("environment", environment, null);
+            // De-register with JMX
+            if (resourceRequireExplicitRegistration) {
+                try {
+                    MBeanUtils.destroyMBean(environment);
+                } catch (Exception e) {
+                    log.warn(sm.getString("namingResources.mbeanDestroyFail",
+                            environment.getName()), e);
+                }
+            }
+            environment.setNamingResources(null);
+        }
+    }
+
+    /**
+     * Add a resource environment reference for this web application.
+     *
+     * @param resource The resource
+     */
+    public void addResourceEnvRef(ContextResourceEnvRef resource) {
+
+        if (entries.contains(resource.getName())) {
+            return;
+        } else {
+            if (!checkResourceType(resource)) {
+                throw new IllegalArgumentException(sm.getString(
+                        "namingResources.resourceTypeFail", resource.getName(),
+                        resource.getType()));
+            }
+            entries.add(resource.getName());
+        }
+
+        synchronized (resourceEnvRefs) {
+            resource.setNamingResources(this);
+            resourceEnvRefs.put(resource.getName(), resource);
+        }
+        support.firePropertyChange("resourceEnvRef", null, resource);
+
     }
 
     @Override

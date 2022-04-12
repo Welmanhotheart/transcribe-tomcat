@@ -127,6 +127,16 @@ public class StandardContext extends ContainerBase
     private final Object constraintsLock = new Object();
 
     /**
+     * The set of application listener class names configured for this
+     * application, in the order they were encountered in the resulting merged
+     * web.xml file.
+     */
+    private String applicationListeners[] = new String[0];
+
+    private boolean parallelAnnotationScanning = false;
+
+
+    /**
      * The "correctly configured" flag for this Context.
      */
     private boolean configured = false;
@@ -723,6 +733,15 @@ public class StandardContext extends ContainerBase
         return new String[0];
     }
 
+    /**
+     * Return the set of application listener class names configured
+     * for this application.
+     */
+    @Override
+    public String[] findApplicationListeners() {
+        return applicationListeners;
+    }
+
     @Override
     public void removeMimeMapping(String extension) {
 
@@ -851,6 +870,21 @@ public class StandardContext extends ContainerBase
     @Override
     public ServletContext getServletContext() {
         return null;
+    }
+
+    @Override
+    public boolean getParallelAnnotationScanning() {
+        return this.parallelAnnotationScanning;
+    }
+
+    @Override
+    public void setParallelAnnotationScanning(boolean parallelAnnotationScanning) {
+
+        boolean oldParallelAnnotationScanning = this.parallelAnnotationScanning;
+        this.parallelAnnotationScanning = parallelAnnotationScanning;
+        support.firePropertyChange("parallelAnnotationScanning", oldParallelAnnotationScanning,
+                this.parallelAnnotationScanning);
+
     }
 
     @Override

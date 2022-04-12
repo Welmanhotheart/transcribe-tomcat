@@ -211,6 +211,62 @@ public class MBeanUtils {
     }
 
     /**
+     * Deregister the MBean for this
+     * <code>ContextEnvironment</code> object.
+     *
+     * @param environment The ContextEnvironment to be managed
+     *
+     * @exception Exception if an MBean cannot be deregistered
+     */
+    public static void destroyMBean(ContextEnvironment environment)
+            throws Exception {
+
+        String mname = createManagedName(environment);
+        ManagedBean managed = registry.findManagedBean(mname);
+        if (managed == null) {
+            return;
+        }
+        String domain = managed.getDomain();
+        if (domain == null) {
+            domain = mserver.getDefaultDomain();
+        }
+        ObjectName oname = createObjectName(domain, environment);
+        if( mserver.isRegistered(oname) ) {
+            mserver.unregisterMBean(oname);
+        }
+
+    }
+
+
+
+    /**
+     * Deregister the MBean for this
+     * <code>ContextResourceLink</code> object.
+     *
+     * @param resourceLink The ContextResourceLink to be managed
+     *
+     * @exception Exception if an MBean cannot be deregistered
+     */
+    public static void destroyMBean(ContextResourceLink resourceLink)
+            throws Exception {
+
+        String mname = createManagedName(resourceLink);
+        ManagedBean managed = registry.findManagedBean(mname);
+        if (managed == null) {
+            return;
+        }
+        String domain = managed.getDomain();
+        if (domain == null) {
+            domain = mserver.getDefaultDomain();
+        }
+        ObjectName oname = createObjectName(domain, resourceLink);
+        if( mserver.isRegistered(oname) ) {
+            mserver.unregisterMBean(oname);
+        }
+
+    }
+
+    /**
      * Create an <code>ObjectName</code> for this
      * <code>ContextResourceLink</code> object.
      *
