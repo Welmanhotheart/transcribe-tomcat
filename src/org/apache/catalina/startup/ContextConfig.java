@@ -1353,6 +1353,39 @@ public class ContextConfig  implements LifecycleListener {
         }
     }
 
+    private static final String getClassName(String internalForm) {
+        if (!internalForm.startsWith("L")) {
+            return internalForm;
+        }
+
+        // Assume starts with L, ends with ; and uses / rather than .
+        return internalForm.substring(1,
+                internalForm.length() - 1).replace('/', '.');
+    }
+
+    private String classHierarchyToString(String className,
+                                          JavaClassCacheEntry entry, Map<String,JavaClassCacheEntry> javaClassCache) {
+        JavaClassCacheEntry start = entry;
+        StringBuilder msg = new StringBuilder(className);
+        msg.append("->");
+
+        String parentName = entry.getSuperclassName();
+        JavaClassCacheEntry parent = javaClassCache.get(parentName);
+        int count = 0;
+
+        while (count < 100 && parent != null && parent != start) {
+            msg.append(parentName);
+            msg.append("->");
+
+            count ++;
+            parentName = parent.getSuperclassName();
+            parent = javaClassCache.get(parentName);
+        }
+
+        msg.append(parentName);
+
+        return msg.toString();
+    }
 
     protected void processAnnotationsFile(File file, WebXml fragment,
                                           boolean handlesTypesOnly, Map<String,JavaClassCacheEntry> javaClassCache) {
@@ -1402,6 +1435,33 @@ public class ContextConfig  implements LifecycleListener {
 
     }
 
+    protected void processAnnotationsJar(URL url, WebXml fragment,
+                                         boolean handlesTypesOnly, Map<String,JavaClassCacheEntry> javaClassCache) {
+
+        try (Jar jar = JarFactory.newInstance(url)) {
+            if (log.isDebugEnabled()) {
+                log.debug(sm.getString(
+                        "contextConfig.processAnnotationsJar.debug", url));
+            }
+
+            jar.nextEntry();
+            String entryName = jar.getEntryName();
+            while (entryName != null) {
+                if (entryName.endsWith(".class")) {
+                    try (InputStream is = jar.getEntryInputStream()) {
+                        processAnnotationsStream(is, fragment, handlesTypesOnly, javaClassCache);
+                    } catch (IOException | org.apache.tomcat.util.bcel.classfile.ClassFormatException e) {
+                        log.error(sm.getString("contextConfig.inputStreamJar",
+                                entryName, url),e);
+                    }
+                }
+                jar.nextEntry();
+                entryName = jar.getEntryName();
+            }
+        } catch (IOException e) {
+            log.error(sm.getString("contextConfig.jarFile", url), e);
+        }
+    }
 
 
     private void scanWebXmlFragment(boolean handlesTypesOnly, WebXml fragment, Map<String, JavaClassCacheEntry> javaClassCache) {

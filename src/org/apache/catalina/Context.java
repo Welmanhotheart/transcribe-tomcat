@@ -418,6 +418,18 @@ public interface Context extends Container, ContextBind {
     public String getDocBase();
 
     /**
+     * Obtains the regular expression that specifies which container provided
+     * SCIs should be filtered out and not used for this context. Matching uses
+     * {@link java.util.regex.Matcher#find()} so the regular expression only has
+     * to match a sub-string of the fully qualified class name of the container
+     * provided SCI for it to be filtered out.
+     *
+     * @return The regular expression against which the fully qualified class
+     *         name of each container provided SCI will be checked
+     */
+    public String getContainerSciFilter();
+
+    /**
      * Set the document root for this Context. This can be either an absolute
      * pathname or a relative pathname. Relative pathnames are relative to the
      * containing Host's appBase.

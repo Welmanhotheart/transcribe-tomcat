@@ -106,6 +106,10 @@ public class UriUtil {
         return new URL(safe);
     }
 
+    public static String getWarSeparator() {
+        return WAR_SEPARATOR;
+    }
+
     /*
      * When testing on markt's desktop each iteration was taking ~1420ns when
      * using String.replaceAll().
@@ -134,5 +138,30 @@ public class UriUtil {
         }
         return tmp;
     }
+
+    /**
+     * Convert a URL of the form <code>war:file:...</code> to
+     * <code>jar:file:...</code>.
+     *
+     * @param warUrl The WAR URL to convert
+     *
+     * @return The equivalent JAR URL
+     *
+     * @throws MalformedURLException If the conversion fails
+     */
+    public static URL warToJar(URL warUrl) throws MalformedURLException {
+        // Assumes that the spec is absolute and starts war:file:/...
+        String file = warUrl.getFile();
+        if (file.contains("*/")) {
+            file = file.replaceFirst("\\*/", "!/");
+        } else if (file.contains("^/")) {
+            file = file.replaceFirst("\\^/", "!/");
+        } else if (PATTERN_CUSTOM != null) {
+            file = file.replaceFirst(PATTERN_CUSTOM.pattern(), "!/");
+        }
+
+        return new URL("jar", warUrl.getHost(), warUrl.getPort(), file);
+    }
+
 
 }

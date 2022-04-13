@@ -1,13 +1,18 @@
 package org.apache.tomcat.util.descriptor.web;
 
 import jakarta.servlet.ServletContext;
+import jakarta.servlet.SessionTrackingMode;
+import org.apache.catalina.org.apache.tomcat.util.descriptor.web.LoginConfig;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
+import org.apache.tomcat.util.buf.B2CConverter;
 import org.apache.tomcat.util.buf.UDecoder;
 import org.apache.tomcat.util.descriptor.XmlIdentifiers;
 import org.apache.tomcat.util.digester.DocumentProperties;
 import org.apache.tomcat.util.res.StringManager;
 
+import java.io.UnsupportedEncodingException;
+import java.net.URL;
 import java.util.*;
 
 public class WebXml extends XmlEncodingBase implements DocumentProperties.Charset {
@@ -54,6 +59,255 @@ public class WebXml extends XmlEncodingBase implements DocumentProperties.Charse
     public void setDenyUncoveredHttpMethods(boolean denyUncoveredHttpMethods) {
         this.denyUncoveredHttpMethods = denyUncoveredHttpMethods;
     }
+
+    // message-destination
+    // TODO: Should support multiple description elements with language
+    // TODO: Should support multiple display-names elements with language
+    // TODO: Should support multiple icon elements ???
+    private final Map<String,MessageDestination> messageDestinations =
+            new HashMap<>();
+    public void addMessageDestination(
+            MessageDestination messageDestination) {
+        if (messageDestinations.containsKey(
+                messageDestination.getName())) {
+            // message-destination names must be unique within a
+            // web(-fragment).xml
+            throw new IllegalArgumentException(
+                    sm.getString("webXml.duplicateMessageDestination",
+                            messageDestination.getName()));
+        }
+        messageDestinations.put(messageDestination.getName(),
+                messageDestination);
+    }
+    public Map<String,MessageDestination> getMessageDestinations() {
+        return messageDestinations;
+    }
+
+
+    // URL of JAR / exploded JAR for this web-fragment
+    private URL uRL = null;
+    public void setURL(URL url) { this.uRL = url; }
+    public URL getURL() { return uRL; }
+
+    // context-param
+    // TODO: description (multiple with language) is ignored
+    private final Map<String,String> contextParams = new HashMap<>();
+    public void addContextParam(String param, String value) {
+        contextParams.put(param, value);
+    }
+    public Map<String,String> getContextParams() { return contextParams; }
+
+
+
+
+
+    // display-name - TODO should support multiple with language
+    private String displayName = null;
+    public String getDisplayName() { return displayName; }
+    public void setDisplayName(String displayName) {
+        this.displayName = displayName;
+    }
+
+    private String requestCharacterEncoding;
+    public String getRequestCharacterEncoding() {
+        return requestCharacterEncoding;
+    }
+    public void setRequestCharacterEncoding(String requestCharacterEncoding) {
+        if (requestCharacterEncoding != null) {
+            try {
+                B2CConverter.getCharset(requestCharacterEncoding);
+            } catch (UnsupportedEncodingException e) {
+                throw new IllegalArgumentException(e);
+            }
+        }
+        this.requestCharacterEncoding = requestCharacterEncoding;
+    }
+
+    private String responseCharacterEncoding;
+    public String getResponseCharacterEncoding() {
+        return responseCharacterEncoding;
+    }
+    public void setResponseCharacterEncoding(String responseCharacterEncoding) {
+        if (responseCharacterEncoding != null) {
+            try {
+                B2CConverter.getCharset(responseCharacterEncoding);
+            } catch (UnsupportedEncodingException e) {
+                throw new IllegalArgumentException(e);
+            }
+        }
+        this.responseCharacterEncoding = responseCharacterEncoding;
+    }
+
+
+    // ejb-ref
+    // TODO: Should support multiple description elements with language
+    private final Map<String,ContextEjb> ejbRefs = new HashMap<>();
+    public void addEjbRef(ContextEjb ejbRef) {
+        ejbRefs.put(ejbRef.getName(),ejbRef);
+    }
+    public Map<String,ContextEjb> getEjbRefs() { return ejbRefs; }
+
+    // env-entry
+    // TODO: Should support multiple description elements with language
+    private final Map<String,ContextEnvironment> envEntries = new HashMap<>();
+    public void addEnvEntry(ContextEnvironment envEntry) {
+        if (envEntries.containsKey(envEntry.getName())) {
+            // env-entry names must be unique within a web(-fragment).xml
+            throw new IllegalArgumentException(
+                    sm.getString("webXml.duplicateEnvEntry",
+                            envEntry.getName()));
+        }
+        envEntries.put(envEntry.getName(),envEntry);
+    }
+    public Map<String,ContextEnvironment> getEnvEntries() { return envEntries; }
+
+    // error-page
+    private final Map<String,ErrorPage> errorPages = new HashMap<>();
+    public void addErrorPage(ErrorPage errorPage) {
+        errorPage.setCharset(getCharset());
+        errorPages.put(errorPage.getName(), errorPage);
+    }
+    public Map<String,ErrorPage> getErrorPages() { return errorPages; }
+
+
+    private static boolean mergeFilter(FilterDef src, FilterDef dest,
+                                       boolean failOnConflict) {
+        if (dest.getAsyncSupported() == null) {
+            dest.setAsyncSupported(src.getAsyncSupported());
+        } else if (src.getAsyncSupported() != null) {
+            if (failOnConflict &&
+                    !src.getAsyncSupported().equals(dest.getAsyncSupported())) {
+                return false;
+            }
+        }
+
+        if (dest.getFilterClass()  == null) {
+            dest.setFilterClass(src.getFilterClass());
+        } else if (src.getFilterClass() != null) {
+            if (failOnConflict &&
+                    !src.getFilterClass().equals(dest.getFilterClass())) {
+                return false;
+            }
+        }
+
+        for (Map.Entry<String,String> srcEntry :
+                src.getParameterMap().entrySet()) {
+            if (dest.getParameterMap().containsKey(srcEntry.getKey())) {
+                if (failOnConflict && !dest.getParameterMap().get(
+                        srcEntry.getKey()).equals(srcEntry.getValue())) {
+                    return false;
+                }
+            } else {
+                dest.addInitParameter(srcEntry.getKey(), srcEntry.getValue());
+            }
+        }
+        return true;
+    }
+
+
+    // jsp-config/jsp-property-group
+    private final Set<JspPropertyGroup> jspPropertyGroups = new LinkedHashSet<>();
+
+
+
+
+    // locale-encoding-mapping-list
+    private final Map<String,String> localeEncodingMappings = new HashMap<>();
+
+
+    // login-config
+    // Digester will check there is only one of these
+    private LoginConfig loginConfig = null;
+    public void setLoginConfig(LoginConfig loginConfig) {
+        loginConfig.setCharset(getCharset());
+        this.loginConfig = loginConfig;
+    }
+    public LoginConfig getLoginConfig() { return loginConfig; }
+
+
+    private <T extends ResourceBase> boolean mergeResourceMap(
+            Map<String, T> fragmentResources, Map<String, T> mainResources,
+            Map<String, T> tempResources, WebXml fragment) {
+        for (T resource : fragmentResources.values()) {
+            String resourceName = resource.getName();
+            if (mainResources.containsKey(resourceName)) {
+                mainResources.get(resourceName).getInjectionTargets().addAll(
+                        resource.getInjectionTargets());
+            } else {
+                // Not defined in main web.xml
+                T existingResource = tempResources.get(resourceName);
+                if (existingResource != null) {
+                    if (!existingResource.equals(resource)) {
+                        log.error(sm.getString(
+                                "webXml.mergeConflictResource",
+                                resourceName,
+                                fragment.getName(),
+                                fragment.getURL()));
+                        return false;
+                    }
+                } else {
+                    tempResources.put(resourceName, resource);
+                }
+            }
+        }
+        return true;
+    }
+
+
+    // ejb-local-ref
+    // TODO: Should support multiple description elements with language
+    private final Map<String,ContextLocalEjb> ejbLocalRefs = new HashMap<>();
+    public void addEjbLocalRef(ContextLocalEjb ejbLocalRef) {
+        ejbLocalRefs.put(ejbLocalRef.getName(),ejbLocalRef);
+    }
+    public Map<String,ContextLocalEjb> getEjbLocalRefs() {
+        return ejbLocalRefs;
+    }
+
+
+    // jsp-config/jsp-property-group
+    public void addJspPropertyGroup(JspPropertyGroup propertyGroup) {
+        propertyGroup.setCharset(getCharset());
+        jspPropertyGroups.add(propertyGroup);
+    }
+    public Set<JspPropertyGroup> getJspPropertyGroups() {
+        return jspPropertyGroups;
+    }
+
+
+    // locale-encoding-mapping-list
+    public void addLocaleEncodingMapping(String locale, String encoding) {
+        localeEncodingMappings.put(locale, encoding);
+    }
+    public Map<String,String> getLocaleEncodingMappings() {
+        return localeEncodingMappings;
+    }
+
+
+    // message-destination-ref
+    // TODO: Should support multiple description elements with language
+    private final Map<String,MessageDestinationRef> messageDestinationRefs =
+            new HashMap<>();
+    public void addMessageDestinationRef(
+            MessageDestinationRef messageDestinationRef) {
+        if (messageDestinationRefs.containsKey(
+                messageDestinationRef.getName())) {
+            // message-destination-ref names must be unique within a
+            // web(-fragment).xml
+            throw new IllegalArgumentException(sm.getString(
+                    "webXml.duplicateMessageDestinationRef",
+                    messageDestinationRef.getName()));
+        }
+        messageDestinationRefs.put(messageDestinationRef.getName(),
+                messageDestinationRef);
+    }
+    public Map<String,MessageDestinationRef> getMessageDestinationRefs() {
+        return messageDestinationRefs;
+    }
+
+
+
+
 
     // Optional metadata-complete attribute
     private boolean metadataComplete = false;
@@ -274,6 +528,33 @@ public class WebXml extends XmlEncodingBase implements DocumentProperties.Charse
     }
     public Set<FilterMap> getFilterMappings() { return filterMaps; }
 
+
+    private <T> boolean mergeMap(Map<String,T> fragmentMap,
+                                 Map<String,T> mainMap, Map<String,T> tempMap, WebXml fragment,
+                                 String mapName) {
+        for (Map.Entry<String, T> entry : fragmentMap.entrySet()) {
+            final String key = entry.getKey();
+            if (!mainMap.containsKey(key)) {
+                // Not defined in main web.xml
+                T value = entry.getValue();
+                if (tempMap.containsKey(key)) {
+                    if (value != null && !value.equals(
+                            tempMap.get(key))) {
+                        log.error(sm.getString(
+                                "webXml.mergeConflictString",
+                                mapName,
+                                key,
+                                fragment.getName(),
+                                fragment.getURL()));
+                        return false;
+                    }
+                } else {
+                    tempMap.put(key, value);
+                }
+            }
+        }
+        return true;
+    }
 
     /**
      * Merge the supplied web fragments into this main web.xml.
