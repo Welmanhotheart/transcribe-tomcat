@@ -20,6 +20,26 @@ import java.util.*;
 public class NamingResourcesImpl extends LifecycleMBeanBase
         implements Serializable, NamingResources {
 
+    /**
+     * Add a local EJB resource reference for this web application.
+     *
+     * @param ejb New EJB resource reference
+     */
+    public void addLocalEjb(ContextLocalEjb ejb) {
+
+        if (entries.contains(ejb.getName())) {
+            return;
+        } else {
+            entries.add(ejb.getName());
+        }
+
+        synchronized (localEjbs) {
+            ejb.setNamingResources(this);
+            localEjbs.put(ejb.getName(), ejb);
+        }
+        support.firePropertyChange("localEjb", null, ejb);
+
+    }
 
     private static final long serialVersionUID = 1L;
 
@@ -37,6 +57,42 @@ public class NamingResourcesImpl extends LifecycleMBeanBase
      * Set of naming entries, keyed by name.
      */
     private final Set<String> entries = new HashSet<>();
+
+    /**
+     * Add an EJB resource reference for this web application.
+     *
+     * @param ejb New EJB resource reference
+     */
+    public void addEjb(ContextEjb ejb) {
+
+        // Entries with lookup-name and ejb-link are an error (EE.5.5.2 / EE.5.5.3)
+        String ejbLink = ejb.getLink();
+        String lookupName = ejb.getLookupName();
+
+        if (ejbLink != null && ejbLink.length() > 0 && lookupName != null && lookupName.length() > 0) {
+            throw new IllegalArgumentException(
+                    sm.getString("namingResources.ejbLookupLink", ejb.getName()));
+        }
+
+        if (entries.contains(ejb.getName())) {
+            return;
+        } else {
+            entries.add(ejb.getName());
+        }
+
+        synchronized (ejbs) {
+            ejb.setNamingResources(this);
+            ejbs.put(ejb.getName(), ejb);
+        }
+        support.firePropertyChange("ejb", null, ejb);
+
+    }
+
+    /**
+     * The local  EJB resource references for this web application, keyed by
+     * name.
+     */
+    private final Map<String, ContextLocalEjb> localEjbs = new HashMap<>();
 
     /**
      * The resource environment references for this web application,
@@ -64,6 +120,12 @@ public class NamingResourcesImpl extends LifecycleMBeanBase
      */
     private final HashMap<String, ContextResource> resources =
             new HashMap<>();
+
+
+    /**
+     * The EJB resource references for this web application, keyed by name.
+     */
+    private final Map<String, ContextEjb> ejbs = new HashMap<>();
 
     /**
      * The property change support for this component.

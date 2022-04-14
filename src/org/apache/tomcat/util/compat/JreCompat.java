@@ -56,4 +56,9 @@ public class JreCompat {
     public static JreCompat getInstance() {
         return instance;
     }
+
+    public static boolean isGraalAvailable() {
+        return graalAvailable;
+    }
+
 }

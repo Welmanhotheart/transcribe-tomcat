@@ -1,7 +1,10 @@
 package org.apache.tomcat.util.descriptor.web;
 
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.ServletContext;
 import jakarta.servlet.SessionTrackingMode;
+import jakarta.servlet.descriptor.JspConfigDescriptor;
+import jakarta.servlet.descriptor.JspPropertyGroupDescriptor;
 import org.apache.catalina.org.apache.tomcat.util.descriptor.web.LoginConfig;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
@@ -10,9 +13,11 @@ import org.apache.tomcat.util.buf.UDecoder;
 import org.apache.tomcat.util.descriptor.XmlIdentifiers;
 import org.apache.tomcat.util.digester.DocumentProperties;
 import org.apache.tomcat.util.res.StringManager;
+import org.apache.tomcat.util.security.Escape;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.util.*;
 
 public class WebXml extends XmlEncodingBase implements DocumentProperties.Charset {
@@ -214,6 +219,59 @@ public class WebXml extends XmlEncodingBase implements DocumentProperties.Charse
     // locale-encoding-mapping-list
     private final Map<String,String> localeEncodingMappings = new HashMap<>();
 
+    // security-constraint
+    // TODO: Should support multiple display-name elements with language
+    // TODO: Should support multiple description elements with language
+    private final Set<SecurityConstraint> securityConstraints = new HashSet<>();
+    public void addSecurityConstraint(SecurityConstraint securityConstraint) {
+        securityConstraint.setCharset(getCharset());
+        securityConstraints.add(securityConstraint);
+    }
+    public Set<SecurityConstraint> getSecurityConstraints() {
+        return securityConstraints;
+    }
+
+    // service-ref
+    // TODO: Should support multiple description elements with language
+    // TODO: Should support multiple display-names elements with language
+    // TODO: Should support multiple icon elements ???
+    private final Map<String,ContextService> serviceRefs = new HashMap<>();
+    public void addServiceRef(ContextService serviceRef) {
+        serviceRefs.put(serviceRef.getName(), serviceRef);
+    }
+    public Map<String,ContextService> getServiceRefs() { return serviceRefs; }
+
+    // resource-ref
+    // TODO: Should support multiple description elements with language
+    private final Map<String,ContextResource> resourceRefs = new HashMap<>();
+    public void addResourceRef(ContextResource resourceRef) {
+        if (resourceRefs.containsKey(resourceRef.getName())) {
+            // resource-ref names must be unique within a web(-fragment).xml
+            throw new IllegalArgumentException(
+                    sm.getString("webXml.duplicateResourceRef",
+                            resourceRef.getName()));
+        }
+        resourceRefs.put(resourceRef.getName(), resourceRef);
+    }
+    public Map<String,ContextResource> getResourceRefs() {
+        return resourceRefs;
+    }
+
+    // resource-env-ref
+    // TODO: Should support multiple description elements with language
+    private final Map<String,ContextResourceEnvRef> resourceEnvRefs = new HashMap<>();
+    public void addResourceEnvRef(ContextResourceEnvRef resourceEnvRef) {
+        if (resourceEnvRefs.containsKey(resourceEnvRef.getName())) {
+            // resource-env-ref names must be unique within a web(-fragment).xml
+            throw new IllegalArgumentException(
+                    sm.getString("webXml.duplicateResourceEnvRef",
+                            resourceEnvRef.getName()));
+        }
+        resourceEnvRefs.put(resourceEnvRef.getName(), resourceEnvRef);
+    }
+    public Map<String,ContextResourceEnvRef> getResourceEnvRefs() {
+        return resourceEnvRefs;
+    }
 
     // login-config
     // Digester will check there is only one of these
@@ -434,6 +492,18 @@ public class WebXml extends XmlEncodingBase implements DocumentProperties.Charse
     }
 
 
+    private boolean replaceWelcomeFiles = false;
+    // welcome-file-list
+    private final Set<String> welcomeFiles = new LinkedHashSet<>();
+    public void addWelcomeFile(String welcomeFile) {
+        if (replaceWelcomeFiles) {
+            welcomeFiles.clear();
+            replaceWelcomeFiles = false;
+        }
+        welcomeFiles.add(welcomeFile);
+    }
+    public Set<String> getWelcomeFiles() { return welcomeFiles; }
+
     private boolean alwaysAddWelcomeFiles = true;
 
     /**
@@ -518,6 +588,19 @@ public class WebXml extends XmlEncodingBase implements DocumentProperties.Charse
     }
     public SessionConfig getSessionConfig() { return sessionConfig; }
 
+    // Digester will check there is only one jsp-config
+    // jsp-config/taglib or taglib (2.3 and earlier)
+    private final Map<String,String> taglibs = new HashMap<>();
+    public void addTaglib(String uri, String location) {
+        if (taglibs.containsKey(uri)) {
+            // Taglib URIs must be unique within a web(-fragment).xml
+            throw new IllegalArgumentException(
+                    sm.getString("webXml.duplicateTaglibUri", uri));
+        }
+        taglibs.put(uri, location);
+    }
+    public Map<String,String> getTaglibs() { return taglibs; }
+
     // filter-mapping
     private final Set<FilterMap> filterMaps = new LinkedHashSet<>();
     private final Set<String> filterMappingNames = new HashSet<>();
@@ -554,6 +637,148 @@ public class WebXml extends XmlEncodingBase implements DocumentProperties.Charse
             }
         }
         return true;
+    }
+
+
+    private static boolean mergeMultipartDef(MultipartDef src, MultipartDef dest,
+                                             boolean failOnConflict) {
+
+        if (dest.getLocation() == null) {
+            dest.setLocation(src.getLocation());
+        } else if (src.getLocation() != null) {
+            if (failOnConflict &&
+                    !src.getLocation().equals(dest.getLocation())) {
+                return false;
+            }
+        }
+
+        if (dest.getFileSizeThreshold() == null) {
+            dest.setFileSizeThreshold(src.getFileSizeThreshold());
+        } else if (src.getFileSizeThreshold() != null) {
+            if (failOnConflict &&
+                    !src.getFileSizeThreshold().equals(
+                            dest.getFileSizeThreshold())) {
+                return false;
+            }
+        }
+
+        if (dest.getMaxFileSize() == null) {
+            dest.setMaxFileSize(src.getMaxFileSize());
+        } else if (src.getMaxFileSize() != null) {
+            if (failOnConflict &&
+                    !src.getMaxFileSize().equals(dest.getMaxFileSize())) {
+                return false;
+            }
+        }
+
+        if (dest.getMaxRequestSize() == null) {
+            dest.setMaxRequestSize(src.getMaxRequestSize());
+        } else if (src.getMaxRequestSize() != null) {
+            if (failOnConflict &&
+                    !src.getMaxRequestSize().equals(
+                            dest.getMaxRequestSize())) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+
+    private static boolean mergeServlet(ServletDef src, ServletDef dest,
+                                        boolean failOnConflict) {
+        // These tests should be unnecessary...
+        if (dest.getServletClass() != null && dest.getJspFile() != null) {
+            return false;
+        }
+        if (src.getServletClass() != null && src.getJspFile() != null) {
+            return false;
+        }
+
+
+        if (dest.getServletClass() == null && dest.getJspFile() == null) {
+            dest.setServletClass(src.getServletClass());
+            dest.setJspFile(src.getJspFile());
+        } else if (failOnConflict) {
+            if (src.getServletClass() != null &&
+                    (dest.getJspFile() != null ||
+                            !src.getServletClass().equals(dest.getServletClass()))) {
+                return false;
+            }
+            if (src.getJspFile() != null &&
+                    (dest.getServletClass() != null ||
+                            !src.getJspFile().equals(dest.getJspFile()))) {
+                return false;
+            }
+        }
+
+        // Additive
+        for (SecurityRoleRef securityRoleRef : src.getSecurityRoleRefs()) {
+            dest.addSecurityRoleRef(securityRoleRef);
+        }
+
+        if (dest.getLoadOnStartup() == null) {
+            if (src.getLoadOnStartup() != null) {
+                dest.setLoadOnStartup(src.getLoadOnStartup().toString());
+            }
+        } else if (src.getLoadOnStartup() != null) {
+            if (failOnConflict &&
+                    !src.getLoadOnStartup().equals(dest.getLoadOnStartup())) {
+                return false;
+            }
+        }
+
+        if (dest.getEnabled() == null) {
+            if (src.getEnabled() != null) {
+                dest.setEnabled(src.getEnabled().toString());
+            }
+        } else if (src.getEnabled() != null) {
+            if (failOnConflict &&
+                    !src.getEnabled().equals(dest.getEnabled())) {
+                return false;
+            }
+        }
+
+        for (Map.Entry<String,String> srcEntry :
+                src.getParameterMap().entrySet()) {
+            if (dest.getParameterMap().containsKey(srcEntry.getKey())) {
+                if (failOnConflict && !dest.getParameterMap().get(
+                        srcEntry.getKey()).equals(srcEntry.getValue())) {
+                    return false;
+                }
+            } else {
+                dest.addInitParameter(srcEntry.getKey(), srcEntry.getValue());
+            }
+        }
+
+        if (dest.getMultipartDef() == null) {
+            dest.setMultipartDef(src.getMultipartDef());
+        } else if (src.getMultipartDef() != null) {
+            return mergeMultipartDef(src.getMultipartDef(),
+                    dest.getMultipartDef(), failOnConflict);
+        }
+
+        if (dest.getAsyncSupported() == null) {
+            if (src.getAsyncSupported() != null) {
+                dest.setAsyncSupported(src.getAsyncSupported().toString());
+            }
+        } else if (src.getAsyncSupported() != null) {
+            if (failOnConflict &&
+                    !src.getAsyncSupported().equals(dest.getAsyncSupported())) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private String encodeUrl(String input) {
+        try {
+            return URLEncoder.encode(input, "UTF-8");
+        } catch (UnsupportedEncodingException e) {
+            // Impossible. UTF-8 is a required character set
+            return null;
+        }
     }
 
     /**
@@ -993,6 +1218,727 @@ public class WebXml extends XmlEncodingBase implements DocumentProperties.Charse
         return true;
     }
 
+
+    private static void appendElement(StringBuilder sb, String indent,
+                                      String elementName, String value) {
+        if (value == null) {
+            return;
+        }
+        if (value.length() == 0) {
+            sb.append(indent);
+            sb.append('<');
+            sb.append(elementName);
+            sb.append("/>\n");
+        } else {
+            sb.append(indent);
+            sb.append('<');
+            sb.append(elementName);
+            sb.append('>');
+            sb.append(Escape.xml(value));
+            sb.append("</");
+            sb.append(elementName);
+            sb.append(">\n");
+        }
+    }
+
+    private static void appendElement(StringBuilder sb, String indent,
+                                      String elementName, Object value) {
+        if (value == null) {
+            return;
+        }
+        appendElement(sb, indent, elementName, value.toString());
+    }
+
+
+
+    private static final String INDENT2 = "  ";
+    private static final String INDENT4 = "    ";
+    private static final String INDENT6 = "      ";
+
+    public String toXml() {
+        StringBuilder sb = new StringBuilder(2048);
+        // TODO - Various, icon, description etc elements are skipped - mainly
+        //        because they are ignored when web.xml is parsed - see above
+
+        // NOTE - Elements need to be written in the order defined in the 2.3
+        //        DTD else validation of the merged web.xml will fail
+
+        // NOTE - Some elements need to be skipped based on the version of the
+        //        specification being used. Version is validated and starts at
+        //        2.2. The version tests used in this method take advantage of
+        //        this.
+
+        // Declaration
+        sb.append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+
+        // Root element
+        if (publicId != null) {
+            sb.append("<!DOCTYPE web-app PUBLIC\n");
+            sb.append("  \"");
+            sb.append(publicId);
+            sb.append("\"\n");
+            sb.append("  \"");
+            if (XmlIdentifiers.WEB_22_PUBLIC.equals(publicId)) {
+                sb.append(XmlIdentifiers.WEB_22_SYSTEM);
+            } else {
+                sb.append(XmlIdentifiers.WEB_23_SYSTEM);
+            }
+            sb.append("\">\n");
+            sb.append("<web-app>");
+        } else {
+            String javaeeNamespace = null;
+            String webXmlSchemaLocation = null;
+            String version = getVersion();
+            if ("2.4".equals(version)) {
+                javaeeNamespace = XmlIdentifiers.JAVAEE_1_4_NS;
+                webXmlSchemaLocation = XmlIdentifiers.WEB_24_XSD;
+            } else if ("2.5".equals(version)) {
+                javaeeNamespace = XmlIdentifiers.JAVAEE_5_NS;
+                webXmlSchemaLocation = XmlIdentifiers.WEB_25_XSD;
+            } else if ("3.0".equals(version)) {
+                javaeeNamespace = XmlIdentifiers.JAVAEE_6_NS;
+                webXmlSchemaLocation = XmlIdentifiers.WEB_30_XSD;
+            } else if ("3.1".equals(version)) {
+                javaeeNamespace = XmlIdentifiers.JAVAEE_7_NS;
+                webXmlSchemaLocation = XmlIdentifiers.WEB_31_XSD;
+            } else if ("4.0".equals(version)) {
+                javaeeNamespace = XmlIdentifiers.JAVAEE_8_NS;
+                webXmlSchemaLocation = XmlIdentifiers.WEB_40_XSD;
+            } else if ("5.0".equals(version)) {
+                javaeeNamespace = XmlIdentifiers.JAKARTAEE_9_NS;
+                webXmlSchemaLocation = XmlIdentifiers.WEB_50_XSD;
+            } else if ("6.0".equals(version)) {
+                javaeeNamespace = XmlIdentifiers.JAKARTAEE_10_NS;
+                webXmlSchemaLocation = XmlIdentifiers.WEB_60_XSD;
+            }
+            sb.append("<web-app xmlns=\"");
+            sb.append(javaeeNamespace);
+            sb.append("\"\n");
+            sb.append("         xmlns:xsi=");
+            sb.append("\"http://www.w3.org/2001/XMLSchema-instance\"\n");
+            sb.append("         xsi:schemaLocation=\"");
+            sb.append(javaeeNamespace);
+            sb.append(' ');
+            sb.append(webXmlSchemaLocation);
+            sb.append("\"\n");
+            sb.append("         version=\"");
+            sb.append(getVersion());
+            sb.append("\"");
+            if ("2.4".equals(version)) {
+                sb.append(">\n\n");
+            } else {
+                sb.append("\n         metadata-complete=\"true\">\n\n");
+            }
+        }
+
+        appendElement(sb, INDENT2, "display-name", displayName);
+
+        if (isDistributable()) {
+            sb.append("  <distributable/>\n\n");
+        }
+
+        for (Map.Entry<String, String> entry : contextParams.entrySet()) {
+            sb.append("  <context-param>\n");
+            appendElement(sb, INDENT4, "param-name", entry.getKey());
+            appendElement(sb, INDENT4, "param-value", entry.getValue());
+            sb.append("  </context-param>\n");
+        }
+        sb.append('\n');
+
+        // Filters were introduced in Servlet 2.3
+        if (getMajorVersion() > 2 || getMinorVersion() > 2) {
+            for (Map.Entry<String, FilterDef> entry : filters.entrySet()) {
+                FilterDef filterDef = entry.getValue();
+                sb.append("  <filter>\n");
+                appendElement(sb, INDENT4, "description",
+                        filterDef.getDescription());
+                appendElement(sb, INDENT4, "display-name",
+                        filterDef.getDisplayName());
+                appendElement(sb, INDENT4, "filter-name",
+                        filterDef.getFilterName());
+                appendElement(sb, INDENT4, "filter-class",
+                        filterDef.getFilterClass());
+                // Async support was introduced for Servlet 3.0 onwards
+                if (getMajorVersion() != 2) {
+                    appendElement(sb, INDENT4, "async-supported",
+                            filterDef.getAsyncSupported());
+                }
+                for (Map.Entry<String, String> param :
+                        filterDef.getParameterMap().entrySet()) {
+                    sb.append("    <init-param>\n");
+                    appendElement(sb, INDENT6, "param-name", param.getKey());
+                    appendElement(sb, INDENT6, "param-value", param.getValue());
+                    sb.append("    </init-param>\n");
+                }
+                sb.append("  </filter>\n");
+            }
+            sb.append('\n');
+
+            for (FilterMap filterMap : filterMaps) {
+                sb.append("  <filter-mapping>\n");
+                appendElement(sb, INDENT4, "filter-name",
+                        filterMap.getFilterName());
+                if (filterMap.getMatchAllServletNames()) {
+                    sb.append("    <servlet-name>*</servlet-name>\n");
+                } else {
+                    for (String servletName : filterMap.getServletNames()) {
+                        appendElement(sb, INDENT4, "servlet-name", servletName);
+                    }
+                }
+                if (filterMap.getMatchAllUrlPatterns()) {
+                    sb.append("    <url-pattern>*</url-pattern>\n");
+                } else {
+                    for (String urlPattern : filterMap.getURLPatterns()) {
+                        appendElement(sb, INDENT4, "url-pattern", encodeUrl(urlPattern));
+                    }
+                }
+                // dispatcher was added in Servlet 2.4
+                if (getMajorVersion() > 2 || getMinorVersion() > 3) {
+                    for (String dispatcher : filterMap.getDispatcherNames()) {
+                        if (getMajorVersion() == 2 &&
+                                DispatcherType.ASYNC.name().equals(dispatcher)) {
+                            continue;
+                        }
+                        appendElement(sb, INDENT4, "dispatcher", dispatcher);
+                    }
+                }
+                sb.append("  </filter-mapping>\n");
+            }
+            sb.append('\n');
+        }
+
+        // Listeners were introduced in Servlet 2.3
+        if (getMajorVersion() > 2 || getMinorVersion() > 2) {
+            for (String listener : listeners) {
+                sb.append("  <listener>\n");
+                appendElement(sb, INDENT4, "listener-class", listener);
+                sb.append("  </listener>\n");
+            }
+            sb.append('\n');
+        }
+
+        for (Map.Entry<String, ServletDef> entry : servlets.entrySet()) {
+            ServletDef servletDef = entry.getValue();
+            sb.append("  <servlet>\n");
+            appendElement(sb, INDENT4, "description",
+                    servletDef.getDescription());
+            appendElement(sb, INDENT4, "display-name",
+                    servletDef.getDisplayName());
+            appendElement(sb, INDENT4, "servlet-name", entry.getKey());
+            appendElement(sb, INDENT4, "servlet-class",
+                    servletDef.getServletClass());
+            appendElement(sb, INDENT4, "jsp-file", servletDef.getJspFile());
+            for (Map.Entry<String, String> param :
+                    servletDef.getParameterMap().entrySet()) {
+                sb.append("    <init-param>\n");
+                appendElement(sb, INDENT6, "param-name", param.getKey());
+                appendElement(sb, INDENT6, "param-value", param.getValue());
+                sb.append("    </init-param>\n");
+            }
+            appendElement(sb, INDENT4, "load-on-startup",
+                    servletDef.getLoadOnStartup());
+            appendElement(sb, INDENT4, "enabled", servletDef.getEnabled());
+            // Async support was introduced for Servlet 3.0 onwards
+            if (getMajorVersion() != 2) {
+                appendElement(sb, INDENT4, "async-supported",
+                        servletDef.getAsyncSupported());
+            }
+            // servlet/run-as was introduced in Servlet 2.3
+            if (getMajorVersion() > 2 || getMinorVersion() > 2) {
+                if (servletDef.getRunAs() != null) {
+                    sb.append("    <run-as>\n");
+                    appendElement(sb, INDENT6, "role-name", servletDef.getRunAs());
+                    sb.append("    </run-as>\n");
+                }
+            }
+            for (SecurityRoleRef roleRef : servletDef.getSecurityRoleRefs()) {
+                sb.append("    <security-role-ref>\n");
+                appendElement(sb, INDENT6, "role-name", roleRef.getName());
+                appendElement(sb, INDENT6, "role-link", roleRef.getLink());
+                sb.append("    </security-role-ref>\n");
+            }
+            // multipart-config was added in Servlet 3.0
+            if (getMajorVersion() != 2) {
+                MultipartDef multipartDef = servletDef.getMultipartDef();
+                if (multipartDef != null) {
+                    sb.append("    <multipart-config>\n");
+                    appendElement(sb, INDENT6, "location",
+                            multipartDef.getLocation());
+                    appendElement(sb, INDENT6, "max-file-size",
+                            multipartDef.getMaxFileSize());
+                    appendElement(sb, INDENT6, "max-request-size",
+                            multipartDef.getMaxRequestSize());
+                    appendElement(sb, INDENT6, "file-size-threshold",
+                            multipartDef.getFileSizeThreshold());
+                    sb.append("    </multipart-config>\n");
+                }
+            }
+            sb.append("  </servlet>\n");
+        }
+        sb.append('\n');
+
+        for (Map.Entry<String, String> entry : servletMappings.entrySet()) {
+            sb.append("  <servlet-mapping>\n");
+            appendElement(sb, INDENT4, "servlet-name", entry.getValue());
+            appendElement(sb, INDENT4, "url-pattern", encodeUrl(entry.getKey()));
+            sb.append("  </servlet-mapping>\n");
+        }
+        sb.append('\n');
+
+        if (sessionConfig != null) {
+            sb.append("  <session-config>\n");
+            appendElement(sb, INDENT4, "session-timeout",
+                    sessionConfig.getSessionTimeout());
+            if (majorVersion >= 3) {
+                sb.append("    <cookie-config>\n");
+                appendElement(sb, INDENT6, "name", sessionConfig.getCookieName());
+                appendElement(sb, INDENT6, "domain",
+                        sessionConfig.getCookieDomain());
+                appendElement(sb, INDENT6, "path", sessionConfig.getCookiePath());
+                appendElement(sb, INDENT6, "comment",
+                        sessionConfig.getCookieComment());
+                appendElement(sb, INDENT6, "http-only",
+                        sessionConfig.getCookieHttpOnly());
+                appendElement(sb, INDENT6, "secure",
+                        sessionConfig.getCookieSecure());
+                appendElement(sb, INDENT6, "max-age",
+                        sessionConfig.getCookieMaxAge());
+                sb.append("    </cookie-config>\n");
+                for (SessionTrackingMode stm :
+                        sessionConfig.getSessionTrackingModes()) {
+                    appendElement(sb, INDENT4, "tracking-mode", stm.name());
+                }
+            }
+            sb.append("  </session-config>\n\n");
+        }
+
+        for (Map.Entry<String, String> entry : mimeMappings.entrySet()) {
+            sb.append("  <mime-mapping>\n");
+            appendElement(sb, INDENT4, "extension", entry.getKey());
+            appendElement(sb, INDENT4, "mime-type", entry.getValue());
+            sb.append("  </mime-mapping>\n");
+        }
+        sb.append('\n');
+
+        if (welcomeFiles.size() > 0) {
+            sb.append("  <welcome-file-list>\n");
+            for (String welcomeFile : welcomeFiles) {
+                appendElement(sb, INDENT4, "welcome-file", welcomeFile);
+            }
+            sb.append("  </welcome-file-list>\n\n");
+        }
+
+        for (ErrorPage errorPage : errorPages.values()) {
+            String exceptionType = errorPage.getExceptionType();
+            int errorCode = errorPage.getErrorCode();
+
+            if (exceptionType == null && errorCode == 0 && getMajorVersion() == 2) {
+                // Default error pages are only supported from 3.0 onwards
+                continue;
+            }
+            sb.append("  <error-page>\n");
+            if (errorPage.getExceptionType() != null) {
+                appendElement(sb, INDENT4, "exception-type", exceptionType);
+            } else if (errorPage.getErrorCode() > 0) {
+                appendElement(sb, INDENT4, "error-code",
+                        Integer.toString(errorCode));
+            }
+            appendElement(sb, INDENT4, "location", errorPage.getLocation());
+            sb.append("  </error-page>\n");
+        }
+        sb.append('\n');
+
+        // jsp-config was added in Servlet 2.4. Prior to that, tag-libs was used
+        // directly and jsp-property-group did not exist
+        if (taglibs.size() > 0 || jspPropertyGroups.size() > 0) {
+            if (getMajorVersion() > 2 || getMinorVersion() > 3) {
+                sb.append("  <jsp-config>\n");
+            }
+            for (Map.Entry<String, String> entry : taglibs.entrySet()) {
+                sb.append("    <taglib>\n");
+                appendElement(sb, INDENT6, "taglib-uri", entry.getKey());
+                appendElement(sb, INDENT6, "taglib-location", entry.getValue());
+                sb.append("    </taglib>\n");
+            }
+            if (getMajorVersion() > 2 || getMinorVersion() > 3) {
+                for (JspPropertyGroup jpg : jspPropertyGroups) {
+                    sb.append("    <jsp-property-group>\n");
+                    for (String urlPattern : jpg.getUrlPatterns()) {
+                        appendElement(sb, INDENT6, "url-pattern", encodeUrl(urlPattern));
+                    }
+                    appendElement(sb, INDENT6, "el-ignored", jpg.getElIgnored());
+                    appendElement(sb, INDENT6, "page-encoding",
+                            jpg.getPageEncoding());
+                    appendElement(sb, INDENT6, "scripting-invalid",
+                            jpg.getScriptingInvalid());
+                    appendElement(sb, INDENT6, "is-xml", jpg.getIsXml());
+                    for (String prelude : jpg.getIncludePreludes()) {
+                        appendElement(sb, INDENT6, "include-prelude", prelude);
+                    }
+                    for (String coda : jpg.getIncludeCodas()) {
+                        appendElement(sb, INDENT6, "include-coda", coda);
+                    }
+                    appendElement(sb, INDENT6, "deferred-syntax-allowed-as-literal",
+                            jpg.getDeferredSyntax());
+                    appendElement(sb, INDENT6, "trim-directive-whitespaces",
+                            jpg.getTrimWhitespace());
+                    appendElement(sb, INDENT6, "default-content-type",
+                            jpg.getDefaultContentType());
+                    appendElement(sb, INDENT6, "buffer", jpg.getBuffer());
+                    appendElement(sb, INDENT6, "error-on-undeclared-namespace",
+                            jpg.getErrorOnUndeclaredNamespace());
+                    sb.append("    </jsp-property-group>\n");
+                }
+                sb.append("  </jsp-config>\n\n");
+            }
+        }
+
+        // resource-env-ref was introduced in Servlet 2.3
+        if (getMajorVersion() > 2 || getMinorVersion() > 2) {
+            for (ContextResourceEnvRef resourceEnvRef : resourceEnvRefs.values()) {
+                sb.append("  <resource-env-ref>\n");
+                appendElement(sb, INDENT4, "description",
+                        resourceEnvRef.getDescription());
+                appendElement(sb, INDENT4, "resource-env-ref-name",
+                        resourceEnvRef.getName());
+                appendElement(sb, INDENT4, "resource-env-ref-type",
+                        resourceEnvRef.getType());
+                appendElement(sb, INDENT4, "mapped-name",
+                        resourceEnvRef.getProperty("mappedName"));
+                for (InjectionTarget target :
+                        resourceEnvRef.getInjectionTargets()) {
+                    sb.append("    <injection-target>\n");
+                    appendElement(sb, INDENT6, "injection-target-class",
+                            target.getTargetClass());
+                    appendElement(sb, INDENT6, "injection-target-name",
+                            target.getTargetName());
+                    sb.append("    </injection-target>\n");
+                }
+                appendElement(sb, INDENT4, "lookup-name", resourceEnvRef.getLookupName());
+                sb.append("  </resource-env-ref>\n");
+            }
+            sb.append('\n');
+        }
+
+        for (ContextResource resourceRef : resourceRefs.values()) {
+            sb.append("  <resource-ref>\n");
+            appendElement(sb, INDENT4, "description",
+                    resourceRef.getDescription());
+            appendElement(sb, INDENT4, "res-ref-name", resourceRef.getName());
+            appendElement(sb, INDENT4, "res-type", resourceRef.getType());
+            appendElement(sb, INDENT4, "res-auth", resourceRef.getAuth());
+            // resource-ref/res-sharing-scope was introduced in Servlet 2.3
+            if (getMajorVersion() > 2 || getMinorVersion() > 2) {
+                appendElement(sb, INDENT4, "res-sharing-scope", resourceRef.getScope());
+            }
+            appendElement(sb, INDENT4, "mapped-name", resourceRef.getProperty("mappedName"));
+            for (InjectionTarget target : resourceRef.getInjectionTargets()) {
+                sb.append("    <injection-target>\n");
+                appendElement(sb, INDENT6, "injection-target-class",
+                        target.getTargetClass());
+                appendElement(sb, INDENT6, "injection-target-name",
+                        target.getTargetName());
+                sb.append("    </injection-target>\n");
+            }
+            appendElement(sb, INDENT4, "lookup-name", resourceRef.getLookupName());
+            sb.append("  </resource-ref>\n");
+        }
+        sb.append('\n');
+
+        for (SecurityConstraint constraint : securityConstraints) {
+            sb.append("  <security-constraint>\n");
+            // security-constraint/display-name was introduced in Servlet 2.3
+            if (getMajorVersion() > 2 || getMinorVersion() > 2) {
+                appendElement(sb, INDENT4, "display-name",
+                        constraint.getDisplayName());
+            }
+            for (SecurityCollection collection : constraint.findCollections()) {
+                sb.append("    <web-resource-collection>\n");
+                appendElement(sb, INDENT6, "web-resource-name",
+                        collection.getName());
+                appendElement(sb, INDENT6, "description",
+                        collection.getDescription());
+                for (String urlPattern : collection.findPatterns()) {
+                    appendElement(sb, INDENT6, "url-pattern", encodeUrl(urlPattern));
+                }
+                for (String method : collection.findMethods()) {
+                    appendElement(sb, INDENT6, "http-method", method);
+                }
+                for (String method : collection.findOmittedMethods()) {
+                    appendElement(sb, INDENT6, "http-method-omission", method);
+                }
+                sb.append("    </web-resource-collection>\n");
+            }
+            if (constraint.findAuthRoles().length > 0) {
+                sb.append("    <auth-constraint>\n");
+                for (String role : constraint.findAuthRoles()) {
+                    appendElement(sb, INDENT6, "role-name", role);
+                }
+                sb.append("    </auth-constraint>\n");
+            }
+            if (constraint.getUserConstraint() != null) {
+                sb.append("    <user-data-constraint>\n");
+                appendElement(sb, INDENT6, "transport-guarantee",
+                        constraint.getUserConstraint());
+                sb.append("    </user-data-constraint>\n");
+            }
+            sb.append("  </security-constraint>\n");
+        }
+        sb.append('\n');
+
+        if (loginConfig != null) {
+            sb.append("  <login-config>\n");
+            appendElement(sb, INDENT4, "auth-method",
+                    loginConfig.getAuthMethod());
+            appendElement(sb,INDENT4, "realm-name",
+                    loginConfig.getRealmName());
+            if (loginConfig.getErrorPage() != null ||
+                    loginConfig.getLoginPage() != null) {
+                sb.append("    <form-login-config>\n");
+                appendElement(sb, INDENT6, "form-login-page",
+                        loginConfig.getLoginPage());
+                appendElement(sb, INDENT6, "form-error-page",
+                        loginConfig.getErrorPage());
+                sb.append("    </form-login-config>\n");
+            }
+            sb.append("  </login-config>\n\n");
+        }
+
+        for (String roleName : securityRoles) {
+            sb.append("  <security-role>\n");
+            appendElement(sb, INDENT4, "role-name", roleName);
+            sb.append("  </security-role>\n");
+        }
+
+        for (ContextEnvironment envEntry : envEntries.values()) {
+            sb.append("  <env-entry>\n");
+            appendElement(sb, INDENT4, "description",
+                    envEntry.getDescription());
+            appendElement(sb, INDENT4, "env-entry-name", envEntry.getName());
+            appendElement(sb, INDENT4, "env-entry-type", envEntry.getType());
+            appendElement(sb, INDENT4, "env-entry-value", envEntry.getValue());
+            appendElement(sb, INDENT4, "mapped-name", envEntry.getProperty("mappedName"));
+            for (InjectionTarget target : envEntry.getInjectionTargets()) {
+                sb.append("    <injection-target>\n");
+                appendElement(sb, INDENT6, "injection-target-class",
+                        target.getTargetClass());
+                appendElement(sb, INDENT6, "injection-target-name",
+                        target.getTargetName());
+                sb.append("    </injection-target>\n");
+            }
+            appendElement(sb, INDENT4, "lookup-name", envEntry.getLookupName());
+            sb.append("  </env-entry>\n");
+        }
+        sb.append('\n');
+
+        for (ContextEjb ejbRef : ejbRefs.values()) {
+            sb.append("  <ejb-ref>\n");
+            appendElement(sb, INDENT4, "description", ejbRef.getDescription());
+            appendElement(sb, INDENT4, "ejb-ref-name", ejbRef.getName());
+            appendElement(sb, INDENT4, "ejb-ref-type", ejbRef.getType());
+            appendElement(sb, INDENT4, "home", ejbRef.getHome());
+            appendElement(sb, INDENT4, "remote", ejbRef.getRemote());
+            appendElement(sb, INDENT4, "ejb-link", ejbRef.getLink());
+            appendElement(sb, INDENT4, "mapped-name", ejbRef.getProperty("mappedName"));
+            for (InjectionTarget target : ejbRef.getInjectionTargets()) {
+                sb.append("    <injection-target>\n");
+                appendElement(sb, INDENT6, "injection-target-class",
+                        target.getTargetClass());
+                appendElement(sb, INDENT6, "injection-target-name",
+                        target.getTargetName());
+                sb.append("    </injection-target>\n");
+            }
+            appendElement(sb, INDENT4, "lookup-name", ejbRef.getLookupName());
+            sb.append("  </ejb-ref>\n");
+        }
+        sb.append('\n');
+
+        // ejb-local-ref was introduced in Servlet 2.3
+        if (getMajorVersion() > 2 || getMinorVersion() > 2) {
+            for (ContextLocalEjb ejbLocalRef : ejbLocalRefs.values()) {
+                sb.append("  <ejb-local-ref>\n");
+                appendElement(sb, INDENT4, "description",
+                        ejbLocalRef.getDescription());
+                appendElement(sb, INDENT4, "ejb-ref-name", ejbLocalRef.getName());
+                appendElement(sb, INDENT4, "ejb-ref-type", ejbLocalRef.getType());
+                appendElement(sb, INDENT4, "local-home", ejbLocalRef.getHome());
+                appendElement(sb, INDENT4, "local", ejbLocalRef.getLocal());
+                appendElement(sb, INDENT4, "ejb-link", ejbLocalRef.getLink());
+                appendElement(sb, INDENT4, "mapped-name", ejbLocalRef.getProperty("mappedName"));
+                for (InjectionTarget target : ejbLocalRef.getInjectionTargets()) {
+                    sb.append("    <injection-target>\n");
+                    appendElement(sb, INDENT6, "injection-target-class",
+                            target.getTargetClass());
+                    appendElement(sb, INDENT6, "injection-target-name",
+                            target.getTargetName());
+                    sb.append("    </injection-target>\n");
+                }
+                appendElement(sb, INDENT4, "lookup-name", ejbLocalRef.getLookupName());
+                sb.append("  </ejb-local-ref>\n");
+            }
+            sb.append('\n');
+        }
+
+        // service-ref was introduced in Servlet 2.4
+        if (getMajorVersion() > 2 || getMinorVersion() > 3) {
+            for (ContextService serviceRef : serviceRefs.values()) {
+                sb.append("  <service-ref>\n");
+                appendElement(sb, INDENT4, "description",
+                        serviceRef.getDescription());
+                appendElement(sb, INDENT4, "display-name",
+                        serviceRef.getDisplayname());
+                appendElement(sb, INDENT4, "service-ref-name",
+                        serviceRef.getName());
+                appendElement(sb, INDENT4, "service-interface",
+                        serviceRef.getInterface());
+                appendElement(sb, INDENT4, "service-ref-type",
+                        serviceRef.getType());
+                appendElement(sb, INDENT4, "wsdl-file", serviceRef.getWsdlfile());
+                appendElement(sb, INDENT4, "jaxrpc-mapping-file",
+                        serviceRef.getJaxrpcmappingfile());
+                String qname = serviceRef.getServiceqnameNamespaceURI();
+                if (qname != null) {
+                    qname = qname + ":";
+                }
+                qname = qname + serviceRef.getServiceqnameLocalpart();
+                appendElement(sb, INDENT4, "service-qname", qname);
+                Iterator<String> endpointIter = serviceRef.getServiceendpoints();
+                while (endpointIter.hasNext()) {
+                    String endpoint = endpointIter.next();
+                    sb.append("    <port-component-ref>\n");
+                    appendElement(sb, INDENT6, "service-endpoint-interface",
+                            endpoint);
+                    appendElement(sb, INDENT6, "port-component-link",
+                            serviceRef.getProperty(endpoint));
+                    sb.append("    </port-component-ref>\n");
+                }
+                Iterator<String> handlerIter = serviceRef.getHandlers();
+                while (handlerIter.hasNext()) {
+                    String handler = handlerIter.next();
+                    sb.append("    <handler>\n");
+                    ContextHandler ch = serviceRef.getHandler(handler);
+                    appendElement(sb, INDENT6, "handler-name", ch.getName());
+                    appendElement(sb, INDENT6, "handler-class",
+                            ch.getHandlerclass());
+                    sb.append("    </handler>\n");
+                }
+                // TODO handler-chains
+                appendElement(sb, INDENT4, "mapped-name", serviceRef.getProperty("mappedName"));
+                for (InjectionTarget target : serviceRef.getInjectionTargets()) {
+                    sb.append("    <injection-target>\n");
+                    appendElement(sb, INDENT6, "injection-target-class",
+                            target.getTargetClass());
+                    appendElement(sb, INDENT6, "injection-target-name",
+                            target.getTargetName());
+                    sb.append("    </injection-target>\n");
+                }
+                appendElement(sb, INDENT4, "lookup-name", serviceRef.getLookupName());
+                sb.append("  </service-ref>\n");
+            }
+            sb.append('\n');
+        }
+
+        if (!postConstructMethods.isEmpty()) {
+            for (Map.Entry<String, String> entry : postConstructMethods
+                    .entrySet()) {
+                sb.append("  <post-construct>\n");
+                appendElement(sb, INDENT4, "lifecycle-callback-class",
+                        entry.getKey());
+                appendElement(sb, INDENT4, "lifecycle-callback-method",
+                        entry.getValue());
+                sb.append("  </post-construct>\n");
+            }
+            sb.append('\n');
+        }
+
+        if (!preDestroyMethods.isEmpty()) {
+            for (Map.Entry<String, String> entry : preDestroyMethods
+                    .entrySet()) {
+                sb.append("  <pre-destroy>\n");
+                appendElement(sb, INDENT4, "lifecycle-callback-class",
+                        entry.getKey());
+                appendElement(sb, INDENT4, "lifecycle-callback-method",
+                        entry.getValue());
+                sb.append("  </pre-destroy>\n");
+            }
+            sb.append('\n');
+        }
+
+        // message-destination-ref, message-destination were introduced in
+        // Servlet 2.4
+        if (getMajorVersion() > 2 || getMinorVersion() > 3) {
+            for (MessageDestinationRef mdr : messageDestinationRefs.values()) {
+                sb.append("  <message-destination-ref>\n");
+                appendElement(sb, INDENT4, "description", mdr.getDescription());
+                appendElement(sb, INDENT4, "message-destination-ref-name",
+                        mdr.getName());
+                appendElement(sb, INDENT4, "message-destination-type",
+                        mdr.getType());
+                appendElement(sb, INDENT4, "message-destination-usage",
+                        mdr.getUsage());
+                appendElement(sb, INDENT4, "message-destination-link",
+                        mdr.getLink());
+                appendElement(sb, INDENT4, "mapped-name", mdr.getProperty("mappedName"));
+                for (InjectionTarget target : mdr.getInjectionTargets()) {
+                    sb.append("    <injection-target>\n");
+                    appendElement(sb, INDENT6, "injection-target-class",
+                            target.getTargetClass());
+                    appendElement(sb, INDENT6, "injection-target-name",
+                            target.getTargetName());
+                    sb.append("    </injection-target>\n");
+                }
+                appendElement(sb, INDENT4, "lookup-name", mdr.getLookupName());
+                sb.append("  </message-destination-ref>\n");
+            }
+            sb.append('\n');
+
+            for (MessageDestination md : messageDestinations.values()) {
+                sb.append("  <message-destination>\n");
+                appendElement(sb, INDENT4, "description", md.getDescription());
+                appendElement(sb, INDENT4, "display-name", md.getDisplayName());
+                appendElement(sb, INDENT4, "message-destination-name",
+                        md.getName());
+                appendElement(sb, INDENT4, "mapped-name", md.getProperty("mappedName"));
+                appendElement(sb, INDENT4, "lookup-name", md.getLookupName());
+                sb.append("  </message-destination>\n");
+            }
+            sb.append('\n');
+        }
+
+        // locale-encoding-mapping-list was introduced in Servlet 2.4
+        if (getMajorVersion() > 2 || getMinorVersion() > 3) {
+            if (localeEncodingMappings.size() > 0) {
+                sb.append("  <locale-encoding-mapping-list>\n");
+                for (Map.Entry<String, String> entry :
+                        localeEncodingMappings.entrySet()) {
+                    sb.append("    <locale-encoding-mapping>\n");
+                    appendElement(sb, INDENT6, "locale", entry.getKey());
+                    appendElement(sb, INDENT6, "encoding", entry.getValue());
+                    sb.append("    </locale-encoding-mapping>\n");
+                }
+                sb.append("  </locale-encoding-mapping-list>\n");
+                sb.append("\n");
+            }
+        }
+
+        // deny-uncovered-http-methods was introduced in Servlet 3.1
+        if (getMajorVersion() > 3 ||
+                (getMajorVersion() == 3 && getMinorVersion() > 0)) {
+            if (denyUncoveredHttpMethods) {
+                sb.append("  <deny-uncovered-http-methods/>");
+                sb.append("\n");
+            }
+        }
+
+        // request-encoding and response-encoding was introduced in Servlet 4.0
+        if (getMajorVersion() >= 4) {
+            appendElement(sb, INDENT2, "request-character-encoding", requestCharacterEncoding);
+            appendElement(sb, INDENT2, "response-character-encoding", responseCharacterEncoding);
+        }
+        sb.append("</web-app>");
+        return sb.toString();
+    }
+
     // filter
     // TODO: Should support multiple description elements with language
     // TODO: Should support multiple display-name elements with language
@@ -1015,6 +1961,14 @@ public class WebXml extends XmlEncodingBase implements DocumentProperties.Charse
         mimeMappings.put(extension, mimeType);
     }
     public Map<String,String> getMimeMappings() { return mimeMappings; }
+
+    // security-role
+    // TODO: description (multiple with language) is ignored
+    private final Set<String> securityRoles = new HashSet<>();
+    public void addSecurityRole(String securityRole) {
+        securityRoles.add(securityRole);
+    }
+    public Set<String> getSecurityRoles() { return securityRoles; }
 
     // Optional publicId attribute
     private String publicId = null;
@@ -1068,6 +2022,26 @@ public class WebXml extends XmlEncodingBase implements DocumentProperties.Charse
             this.name = name;
         }
     }
+
+    private boolean mergeLifecycleCallback(
+            Map<String, String> fragmentMap, Map<String, String> tempMap,
+            WebXml fragment, String mapName) {
+        for (Map.Entry<String, String> entry : fragmentMap.entrySet()) {
+            final String key = entry.getKey();
+            final String value = entry.getValue();
+            if (tempMap.containsKey(key)) {
+                if (value != null && !value.equals(tempMap.get(key))) {
+                    log.error(sm.getString("webXml.mergeConflictString",
+                            mapName, key, fragment.getName(), fragment.getURL()));
+                    return false;
+                }
+            } else {
+                tempMap.put(key, value);
+            }
+        }
+        return true;
+    }
+
 
     // post-construct elements
     private Map<String, String> postConstructMethods = new HashMap<>();
@@ -1310,6 +2284,31 @@ public class WebXml extends XmlEncodingBase implements DocumentProperties.Charse
             }
         }
     }
+
+
+    public JspConfigDescriptor getJspConfigDescriptor() {
+        if (jspPropertyGroups.isEmpty() && taglibs.isEmpty()) {
+            return null;
+        }
+
+        Collection<JspPropertyGroupDescriptor> descriptors =
+                new ArrayList<>(jspPropertyGroups.size());
+        for (JspPropertyGroup jspPropertyGroup : jspPropertyGroups) {
+            JspPropertyGroupDescriptor descriptor =
+                    new JspPropertyGroupDescriptorImpl(jspPropertyGroup);
+            descriptors.add(descriptor);
+
+        }
+
+        Collection<TaglibDescriptor> tlds = new HashSet<>(taglibs.size());
+        for (Map.Entry<String, String> entry : taglibs.entrySet()) {
+            TaglibDescriptor descriptor = new TaglibDescriptorImpl(
+                    entry.getValue(), entry.getKey());
+            tlds.add(descriptor);
+        }
+        return new JspConfigDescriptorImpl(descriptors, tlds);
+    }
+
 
     private static void makeAfterOthersExplicit(Set<String> afterOrdering,
                                                 Map<String, WebXml> fragments) {

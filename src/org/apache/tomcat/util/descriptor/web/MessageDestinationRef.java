@@ -15,4 +15,16 @@ public class MessageDestinationRef extends ResourceBase{
         this.usage = usage;
     }
 
+    /**
+     * The link of this destination ref.
+     */
+    private String link = null;
+
+    public String getLink() {
+        return this.link;
+    }
+
+    public void setLink(String link) {
+        this.link = link;
+    }
 }

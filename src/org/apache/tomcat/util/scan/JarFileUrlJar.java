@@ -4,10 +4,12 @@ import org.apache.tomcat.Jar;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.JarURLConnection;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.util.Enumeration;
+import java.util.HashSet;
 import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
@@ -45,5 +47,42 @@ public class JarFileUrlJar implements Jar {
     }
 
 
+    @Override
+    public void close() {
+        if (jarFile != null) {
+            try {
+                jarFile.close();
+            } catch (IOException e) {
+                // Ignore
+            }
+        }
+    }
 
+    @Override
+    public URL getJarFileURL() {
+        return jarFileURL;
+    }
+
+
+    @Override
+    public void reset() throws IOException {
+        entries = null;
+        entryNamesSeen = null;
+        entry = null;
+    }
+
+    @Override
+    public void nextEntry() {
+
+    }
+
+    @Override
+    public String getEntryName() {
+        return null;
+    }
+
+    @Override
+    public InputStream getEntryInputStream() throws IOException {
+        return null;
+    }
 }

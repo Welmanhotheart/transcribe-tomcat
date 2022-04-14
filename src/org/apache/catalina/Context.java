@@ -1,11 +1,13 @@
 package org.apache.catalina;
 
 import jakarta.servlet.ServletContext;
+import jakarta.servlet.descriptor.JspConfigDescriptor;
 import org.apache.catalina.deploy.NamingResourcesImpl;
 import org.apache.catalina.org.apache.tomcat.util.descriptor.web.LoginConfig;
 import org.apache.jasper.servlet.jakarta.servlet.ServletContainerInitializer;
 import org.apache.tomcat.ContextBind;
 import org.apache.tomcat.InstanceManager;
+import org.apache.tomcat.JarScanner;
 import org.apache.tomcat.util.descriptor.web.ErrorPage;
 import org.apache.tomcat.util.descriptor.web.FilterDef;
 import org.apache.tomcat.util.descriptor.web.FilterMap;
@@ -194,6 +196,28 @@ public interface Context extends Container, ContextBind {
      */
     public String[] findWrapperListeners();
 
+    /**
+     * Add an error page for the specified error or Java exception.
+     *
+     * @param errorPage The error page definition to be added
+     */
+    public void addErrorPage(ErrorPage errorPage);
+
+
+    /**
+     * Add a filter definition to this Context.
+     *
+     * @param filterDef The filter definition to be added
+     */
+    public void addFilterDef(FilterDef filterDef);
+
+
+    /**
+     * Add a filter mapping to this Context.
+     *
+     * @param filterMap The filter mapping to be added
+     */
+    public void addFilterMap(FilterMap filterMap);
 
     /**
      * Remove a class name from the set of ContainerListener classes that
@@ -204,6 +228,63 @@ public interface Context extends Container, ContextBind {
     public void removeWrapperListener(String listener);
 
     /**
+     * Set the JspConfigDescriptor for this context.
+     * A null value indicates there is not JSP configuration.
+     *
+     * @param descriptor the new JSP configuration
+     */
+    public void setJspConfigDescriptor(JspConfigDescriptor descriptor);
+
+    /**
+     * Add a Locale Encoding Mapping (see Sec 5.4 of Servlet spec 2.4)
+     *
+     * @param locale locale to map an encoding for
+     * @param encoding encoding to be used for a give locale
+     */
+    public void addLocaleEncodingMappingParameter(String locale, String encoding);
+
+    /**
+     * Add a new Listener class name to the set of Listeners
+     * configured for this application.
+     *
+     * @param listener Java class name of a listener class
+     */
+    public void addApplicationListener(String listener);
+
+    /**
+     * Set the effective major version of the Servlet spec used by this
+     * context.
+     *
+     * @param major Set the version number
+     */
+    public void setEffectiveMajorVersion(int major);
+
+    /**
+     * @return the effective minor version of the Servlet spec used by this
+     * context.
+     */
+    public int getEffectiveMinorVersion();
+
+
+    /**
+     * Set the effective minor version of the Servlet spec used by this
+     * context.
+     *
+     * @param minor Set the version number
+     */
+    public void setEffectiveMinorVersion(int minor);
+
+
+    /**
+     * Add a new context initialization parameter, replacing any existing
+     * value for the specified name.
+     *
+     * @param name Name of the new parameter
+     * @param value Value of the new  parameter
+     */
+    public void addParameter(String name, String value);
+
+    /**
      * Add a ServletContainerInitializer instance to this web application.
      *
      * @param sci       The instance to add
@@ -212,6 +293,48 @@ public interface Context extends Container, ContextBind {
      */
     public void addServletContainerInitializer(
             ServletContainerInitializer sci, Set<Class<?>> classes);
+
+    /**
+     * Return the deny-uncovered-http-methods flag for this web application.
+     *
+     * @return The current value of the flag
+     */
+    public boolean getDenyUncoveredHttpMethods();
+
+    /**
+     * Return the display name of this web application.
+     *
+     * @return The display name
+     */
+    public String getDisplayName();
+
+    /**
+     * Set the distributable flag for this web application.
+     *
+     * @param distributable The new distributable flag
+     */
+    public void setDistributable(boolean distributable);
+
+    /**
+     * Get the distributable flag for this web application.
+     *
+     * @return The value of the distributable flag for this web application.
+     */
+    public boolean getDistributable();
+
+    /**
+     * Set the display name of this web application.
+     *
+     * @param displayName The new display name
+     */
+    public void setDisplayName(String displayName);
+
+    /**
+     * Set the deny-uncovered-http-methods flag for this web application.
+     *
+     * @param denyUncoveredHttpMethods The new deny-uncovered-http-methods flag
+     */
+    public void setDenyUncoveredHttpMethods(boolean denyUncoveredHttpMethods);
 
     /**
      * Will the parsing of web.xml and web-fragment.xml files for this Context
@@ -312,6 +435,59 @@ public interface Context extends Container, ContextBind {
     public ServletContext getServletContext();
 
     /**
+     * Add a new welcome file to the set recognized by this Context.
+     *
+     * @param name New welcome file name
+     */
+    public void addWelcomeFile(String name);
+
+    /**
+     * @return the servlet name mapped by the specified pattern (if any);
+     * otherwise return <code>null</code>.
+     *
+     * @param pattern Pattern for which a mapping is requested
+     */
+    public String findServletMapping(String pattern);
+
+    /**
+     * Add a post construct method definition for the given class, if there is
+     * an existing definition for the specified class - IllegalArgumentException
+     * will be thrown.
+     *
+     * @param clazz Fully qualified class name
+     * @param method
+     *            Post construct method name
+     * @throws IllegalArgumentException
+     *             if the fully qualified class name or method name are
+     *             <code>NULL</code>; if there is already post construct method
+     *             definition for the given class
+     */
+    public void addPostConstructMethod(String clazz, String method);
+
+
+    /**
+     * Add a pre destroy method definition for the given class, if there is an
+     * existing definition for the specified class - IllegalArgumentException
+     * will be thrown.
+     *
+     * @param clazz Fully qualified class name
+     * @param method
+     *            Post construct method name
+     * @throws IllegalArgumentException
+     *             if the fully qualified class name or method name are
+     *             <code>NULL</code>; if there is already pre destroy method
+     *             definition for the given class
+     */
+    public void addPreDestroyMethod(String clazz, String method);
+
+    /**
+     * Get the Jar Scanner to be used to scan for JAR resources for this
+     * context.
+     * @return  The Jar Scanner configured for this context.
+     */
+    public JarScanner getJarScanner();
+
+    /**
      * @return the value of the parallel annotation scanning flag.  If true,
      * it will dispatch scanning to the utility executor.
      */
@@ -343,6 +519,61 @@ public interface Context extends Container, ContextBind {
      */
     public WebResourceRoot getResources();
 
+    /**
+     * Set the public identifier of the deployment descriptor DTD that is
+     * currently being parsed.
+     *
+     * @param publicId The public identifier
+     */
+    public void setPublicId(String publicId);
+
+    /**
+     * Set the boolean on the annotations parsing for this web
+     * application.
+     *
+     * @param ignoreAnnotations The boolean on the annotations parsing
+     */
+    public void setIgnoreAnnotations(boolean ignoreAnnotations);
+
+    /**
+     * Add a new MIME mapping, replacing any existing mapping for
+     * the specified extension.
+     *
+     * @param extension Filename extension being mapped
+     * @param mimeType Corresponding MIME type
+     */
+    public void addMimeMapping(String extension, String mimeType);
+
+    /**
+     * Set the default request body encoding for this web application.
+     *
+     * @param encoding The default encoding
+     */
+    public void setRequestCharacterEncoding(String encoding);
+
+    /**
+     * Set the default response body encoding for this web application.
+     *
+     * @param encoding The default encoding
+     */
+    public void setResponseCharacterEncoding(String encoding);
+
+    /**
+     * Get the default response body encoding for this web application.
+     *
+     * @return The default response body encoding
+     */
+    public String getResponseCharacterEncoding();
+
+    /**
+     * Factory method to create and return a new Wrapper instance, of
+     * the Java implementation class appropriate for this Context
+     * implementation.  The constructor of the instantiated Wrapper
+     * will have been called, but no properties will have been set.
+     *
+     * @return a newly created wrapper instance that is used to wrap a Servlet
+     */
+    public Wrapper createWrapper();
 
     /**
      * Set the Resources object with which this Context is associated.
@@ -355,6 +586,21 @@ public interface Context extends Container, ContextBind {
      * @return the instance manager associated with this context.
      */
     public InstanceManager getInstanceManager();
+
+    /**
+     * @return the default session timeout (in minutes) for this
+     * web application.
+     */
+    public int getSessionTimeout();
+
+
+    /**
+     * Set the default session timeout (in minutes) for this
+     * web application.
+     *
+     * @param timeout The new default session timeout
+     */
+    public void setSessionTimeout(int timeout);
 
     /**
      * Set the instance manager associated with this context.

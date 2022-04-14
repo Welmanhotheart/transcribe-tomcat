@@ -1,7 +1,9 @@
 package jakarta.servlet;
 
+import java.io.InputStream;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.util.Set;
 
 public interface ServletContext {
 
@@ -110,5 +112,68 @@ public interface ServletContext {
      * @see ServletContext#getAttributeNames
      */
     public Object getAttribute(String name);
+
+    /**
+     * @return TODO
+     * @throws UnsupportedOperationException    If called from a
+     *    {@link ServletContextListener#contextInitialized(ServletContextEvent)}
+     *    method of a {@link ServletContextListener} that was not defined in a
+     *    web.xml file, a web-fragment.xml file nor annotated with
+     *    {@link jakarta.servlet.annotation.WebListener}. For example, a
+     *    {@link ServletContextListener} defined in a TLD would not be able to
+     *    use this method.
+     * @since Servlet 3.0 TODO SERVLET3 - Add comments
+     */
+    public SessionCookieConfig getSessionCookieConfig();
+
+    /**
+     * Configures the available session tracking modes for this web application.
+     * @param sessionTrackingModes The session tracking modes to use for this
+     *        web application
+     * @throws IllegalArgumentException
+     *             If sessionTrackingModes specifies
+     *             {@link SessionTrackingMode#SSL} in combination with any other
+     *             {@link SessionTrackingMode}
+     * @throws IllegalStateException
+     *             If the context has already been initialised
+     * @throws UnsupportedOperationException    If called from a
+     *    {@link ServletContextListener#contextInitialized(ServletContextEvent)}
+     *    method of a {@link ServletContextListener} that was not defined in a
+     *    web.xml file, a web-fragment.xml file nor annotated with
+     *    {@link jakarta.servlet.annotation.WebListener}. For example, a
+     *    {@link ServletContextListener} defined in a TLD would not be able to
+     *    use this method.
+     * @since Servlet 3.0
+     */
+    public void setSessionTrackingModes(
+            Set<SessionTrackingMode> sessionTrackingModes);
+
+    /**
+     * Returns the resource located at the named path as an
+     * <code>InputStream</code> object.
+     * <p>
+     * The data in the <code>InputStream</code> can be of any type or length.
+     * The path must be specified according to the rules given in
+     * <code>getResource</code>. This method returns <code>null</code> if no
+     * resource exists at the specified path.
+     * <p>
+     * Meta-information such as content length and content type that is
+     * available via <code>getResource</code> method is lost when using this
+     * method.
+     * <p>
+     * The servlet container must implement the URL handlers and
+     * <code>URLConnection</code> objects necessary to access the resource.
+     * <p>
+     * This method is different from
+     * <code>java.lang.Class.getResourceAsStream</code>, which uses a class
+     * loader. This method allows servlet containers to make a resource
+     * available to a servlet from any location, without using a class loader.
+     *
+     * @param path
+     *            a <code>String</code> specifying the path to the resource
+     * @return the <code>InputStream</code> returned to the servlet, or
+     *         <code>null</code> if no resource exists at the specified path
+     */
+    public InputStream getResourceAsStream(String path);
 
 }

@@ -1,6 +1,15 @@
 package org.apache.catalina;
 
+import java.net.URL;
+
 public interface WebResourceRoot extends Lifecycle{
+
+    enum ResourceSetType {
+        PRE,
+        RESOURCE_JAR,
+        POST,
+        CLASSES_JAR
+    }
 
     /**
      * @return the web application this WebResourceRoot is associated with.
@@ -32,4 +41,40 @@ public interface WebResourceRoot extends Lifecycle{
      *          then a zero length array will be returned.
      */
     WebResource[] listResources(String path);
+
+    /**
+     * Creates a new {@link WebResourceSet} for this {@link WebResourceRoot}
+     * based on the provided parameters.
+     *
+     * @param type          The type of {@link WebResourceSet} to create
+     * @param webAppMount   The path within the web application that the
+     *                          resources should be published at. It must start
+     *                          with '/'.
+     * @param url           The URL of the resource (must locate a JAR, file or
+     *                          directory)
+     * @param internalPath  The path within the resource where the content is to
+     *                          be found. It must start with '/'.
+     */
+    void createWebResourceSet(ResourceSetType type, String webAppMount, URL url,
+                              String internalPath);
+
+    /**
+     * Creates a new {@link WebResourceSet} for this {@link WebResourceRoot}
+     * based on the provided parameters.
+     *
+     * @param type          The type of {@link WebResourceSet} to create
+     * @param webAppMount   The path within the web application that the
+     *                          resources should be published at. It must start
+     *                          with '/'.
+     * @param base          The location of the resources
+     * @param archivePath   The path within the resource to the archive where
+     *                          the content is to be found. If there is no
+     *                          archive then this should be <code>null</code>.
+     * @param internalPath  The path within the archive (or the resource if the
+     *                          archivePath is <code>null</code> where the
+     *                          content is to be found. It must start with '/'.
+     */
+    void createWebResourceSet(ResourceSetType type, String webAppMount,
+                              String base, String archivePath, String internalPath);
+
 }

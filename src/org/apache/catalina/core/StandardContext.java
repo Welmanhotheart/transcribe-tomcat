@@ -9,6 +9,7 @@ import org.apache.jasper.servlet.jakarta.servlet.ServletContainerInitializer;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.InstanceManager;
+import org.apache.tomcat.util.compat.JreCompat;
 import org.apache.tomcat.util.descriptor.XmlIdentifiers;
 import org.apache.tomcat.util.descriptor.web.*;
 
@@ -134,6 +135,14 @@ public class StandardContext extends ContainerBase
     private String applicationListeners[] = new String[0];
 
     private boolean parallelAnnotationScanning = false;
+
+    /**
+     * The "follow standard delegation model" flag that will be used to
+     * configure our ClassLoader.
+     * Graal cannot actually load a class from the webapp classloader,
+     * so delegate by default.
+     */
+    private boolean delegate = JreCompat.isGraalAvailable();
 
 
     /**
@@ -805,6 +814,16 @@ public class StandardContext extends ContainerBase
     @Override
     public void addServletContainerInitializer(ServletContainerInitializer sci, Set<Class<?>> classes) {
 
+    }
+
+    /**
+     * Return the "follow standard delegation model" flag used to configure
+     * our ClassLoader.
+     *
+     * @return <code>true</code> if classloading delegates to the parent classloader first
+     */
+    public boolean getDelegate() {
+        return this.delegate;
     }
 
     @Override

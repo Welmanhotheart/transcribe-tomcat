@@ -3,6 +3,7 @@ package org.apache.catalina.startup;
 import jakarta.servlet.ServletContext;
 import jakarta.servlet.ServletRegistration;
 import jakarta.servlet.ServletSecurityElement;
+import jakarta.servlet.descriptor.JspConfigDescriptor;
 import org.apache.catalina.*;
 import org.apache.catalina.deploy.NamingResourcesImpl;
 import org.apache.catalina.org.apache.tomcat.util.descriptor.web.LoginConfig;
@@ -298,12 +299,92 @@ public class FailedContext  extends LifecycleMBeanBase implements Context {
     }
 
     @Override
+    public void addErrorPage(ErrorPage errorPage) {
+
+    }
+
+    @Override
+    public void addFilterDef(FilterDef filterDef) {
+
+    }
+
+    @Override
+    public void addFilterMap(FilterMap filterMap) {
+
+    }
+
+    @Override
     public void removeWrapperListener(String listener) {
 
     }
 
     @Override
+    public void setJspConfigDescriptor(JspConfigDescriptor descriptor) {
+
+    }
+
+    @Override
+    public void addLocaleEncodingMappingParameter(String locale, String encoding) {
+
+    }
+
+    @Override
+    public void addApplicationListener(String listener) {
+
+    }
+
+    @Override
+    public void setEffectiveMajorVersion(int major) {
+
+    }
+
+    @Override
+    public int getEffectiveMinorVersion() {
+        return 0;
+    }
+
+    @Override
+    public void setEffectiveMinorVersion(int minor) {
+
+    }
+
+    @Override
+    public void addParameter(String name, String value) {
+
+    }
+
+    @Override
     public void addServletContainerInitializer(ServletContainerInitializer sci, Set<Class<?>> classes) {
+
+    }
+
+    @Override
+    public boolean getDenyUncoveredHttpMethods() {
+        return false;
+    }
+
+    @Override
+    public String getDisplayName() {
+        return null;
+    }
+
+    @Override
+    public void setDistributable(boolean distributable) {
+
+    }
+
+    @Override
+    public boolean getDistributable() {
+        return false;
+    }
+
+    @Override
+    public void setDisplayName(String displayName) {
+
+    }
+
+    @Override
+    public void setDenyUncoveredHttpMethods(boolean denyUncoveredHttpMethods) {
 
     }
 
@@ -443,6 +524,11 @@ public class FailedContext  extends LifecycleMBeanBase implements Context {
 
     @Override
     public String getDocBase() {
+        return null;
+    }
+
+    @Override
+    public String getContainerSciFilter() {
         return null;
     }
 

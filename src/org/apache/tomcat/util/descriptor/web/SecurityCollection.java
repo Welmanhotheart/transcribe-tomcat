@@ -63,4 +63,53 @@ public class SecurityCollection extends XmlEncodingBase implements Serializable 
         return methods;
     }
 
+    // ----------------------------------------------------- Instance Variables
+
+
+    /**
+     * Description of this web resource collection.
+     */
+    private String description = null;
+
+    /**
+     * The name of this web resource collection.
+     */
+    private String name = null;
+
+    /**
+     * @return the description of this web resource collection.
+     */
+    public String getDescription() {
+        return this.description;
+    }
+
+
+    /**
+     * Set the description of this web resource collection.
+     *
+     * @param description The new description
+     */
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+
+    /**
+     * @return the name of this web resource collection.
+     */
+    public String getName() {
+        return this.name;
+    }
+
+
+    /**
+     * Set the name of this web resource collection
+     *
+     * @param name The new name
+     */
+    public void setName(String name) {
+        this.name = name;
+    }
+
+
 }

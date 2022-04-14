@@ -1,5 +1,9 @@
 package org.apache.tomcat.util.descriptor.web;
 
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.Map;
+
 public class ContextService  extends ResourceBase{
 
     /**
@@ -60,5 +64,77 @@ public class ContextService  extends ResourceBase{
     public void setWsdlfile(String wsdlfile) {
         this.wsdlfile = wsdlfile;
     }
+
+    /**
+     * The WebService reference name.
+     */
+    private String displayname = null;
+
+    public String getDisplayname() {
+        return this.displayname;
+    }
+
+    public void setDisplayname(String displayname) {
+        this.displayname = displayname;
+    }
+
+
+    /**
+     * A file specifying the correlation of the WSDL definition
+     * to the interfaces (Service Endpoint Interface, Service Interface).
+     */
+    private String jaxrpcmappingfile = null;
+
+    public String getJaxrpcmappingfile() {
+        return this.jaxrpcmappingfile;
+    }
+
+    public void setJaxrpcmappingfile(String jaxrpcmappingfile) {
+        this.jaxrpcmappingfile = jaxrpcmappingfile;
+    }
+
+    /**
+     * Declares a client dependency on the container to resolving a Service Endpoint Interface
+     * to a WSDL port. It optionally associates the Service Endpoint Interface with a
+     * particular port-component.
+     * @return the endpoint names
+     */
+    public Iterator<String> getServiceendpoints() {
+        return this.listProperties();
+    }
+
+    /**
+     * The fully qualified class name of the JAX-WS Service interface that the
+     * client depends on.
+     */
+    private String serviceInterface = null;
+
+    public String getInterface() {
+        return serviceInterface;
+    }
+
+    public void setInterface(String serviceInterface) {
+        this.serviceInterface = serviceInterface;
+    }
+
+    /**
+     * A list of Handlers to use for this service-ref.
+     *
+     * The instantiation of the handler have to be done.
+     */
+    private final Map<String, ContextHandler> handlers = new HashMap<>();
+
+    public Iterator<String> getHandlers() {
+        return handlers.keySet().iterator();
+    }
+
+    public ContextHandler getHandler(String handlername) {
+        return handlers.get(handlername);
+    }
+
+    public void addHandler(ContextHandler handler) {
+        handlers.put(handler.getName(), handler);
+    }
+
 
 }

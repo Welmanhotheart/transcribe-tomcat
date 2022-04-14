@@ -1,6 +1,8 @@
 package org.apache.catalina.startup;
 
+import jakarta.servlet.MultipartConfigElement;
 import jakarta.servlet.ServletContext;
+import jakarta.servlet.SessionCookieConfig;
 import jakarta.servlet.annotation.HandlesTypes;
 import org.apache.bcel.classfile.ClassFormatException;
 import org.apache.catalina.*;
@@ -14,6 +16,9 @@ import org.apache.jasper.servlet.JasperInitializer;
 import org.apache.jasper.servlet.jakarta.servlet.ServletContainerInitializer;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
+import org.apache.tomcat.Jar;
+import org.apache.tomcat.JarScanType;
+import org.apache.tomcat.JarScanner;
 import org.apache.tomcat.util.bcel.classfile.*;
 import org.apache.tomcat.util.buf.UriUtil;
 import org.apache.tomcat.util.descriptor.InputSourceUtil;
@@ -24,6 +29,7 @@ import org.apache.tomcat.util.digester.RuleSet;
 import org.apache.tomcat.util.file.ConfigFileLoader;
 import org.apache.tomcat.util.file.ConfigurationSource;
 import org.apache.tomcat.util.res.StringManager;
+import org.apache.tomcat.util.scan.JarFactory;
 import org.xml.sax.InputSource;
 import org.xml.sax.SAXParseException;
 
@@ -1353,6 +1359,41 @@ public class ContextConfig  implements LifecycleListener {
         }
     }
 
+    private void populateJavaClassCache(String className, JavaClass javaClass,
+                                        Map<String,JavaClassCacheEntry> javaClassCache) {
+        if (javaClassCache.containsKey(className)) {
+            return;
+        }
+
+        // Add this class to the cache
+        javaClassCache.put(className, new JavaClassCacheEntry(javaClass));
+
+        populateJavaClassCache(javaClass.getSuperclassName(), javaClassCache);
+
+        for (String interfaceName : javaClass.getInterfaceNames()) {
+            populateJavaClassCache(interfaceName, javaClassCache);
+        }
+    }
+
+    private void populateJavaClassCache(String className,
+                                        Map<String,JavaClassCacheEntry> javaClassCache) {
+        if (!javaClassCache.containsKey(className)) {
+            String name = className.replace('.', '/') + ".class";
+            try (InputStream is = context.getLoader().getClassLoader().getResourceAsStream(name)) {
+                if (is == null) {
+                    return;
+                }
+                ClassParser parser = new ClassParser(is);
+                JavaClass clazz = parser.parse();
+                populateJavaClassCache(clazz.getClassName(), clazz, javaClassCache);
+            } catch (org.apache.tomcat.util.bcel.classfile.ClassFormatException | IOException e) {
+                log.debug(sm.getString("contextConfig.invalidSciHandlesTypes",
+                        className), e);
+            }
+        }
+    }
+
+
     private static final String getClassName(String internalForm) {
         if (!internalForm.startsWith("L")) {
             return internalForm;
@@ -2016,6 +2057,350 @@ public class ContextConfig  implements LifecycleListener {
             }
         }
     }
+
+    /**
+     * Scan JARs that contain web-fragment.xml files that will be used to
+     * configure this application to see if they also contain static resources.
+     * If static resources are found, add them to the context. Resources are
+     * added in web-fragment.xml priority order.
+     * @param fragments The set of fragments that will be scanned for
+     *  static resources
+     */
+    protected void processResourceJARs(Set<WebXml> fragments) {
+        for (WebXml fragment : fragments) {
+            URL url = fragment.getURL();
+            try {
+                if ("jar".equals(url.getProtocol()) || url.toString().endsWith(".jar")) {
+                    try (Jar jar = JarFactory.newInstance(url)) {
+                        jar.nextEntry();
+                        String entryName = jar.getEntryName();
+                        while (entryName != null) {
+                            if (entryName.startsWith("META-INF/resources/")) {
+                                context.getResources().createWebResourceSet(
+                                        WebResourceRoot.ResourceSetType.RESOURCE_JAR,
+                                        "/", url, "/META-INF/resources");
+                                break;
+                            }
+                            jar.nextEntry();
+                            entryName = jar.getEntryName();
+                        }
+                    }
+                } else if ("file".equals(url.getProtocol())) {
+                    File file = new File(url.toURI());
+                    File resources = new File(file, "META-INF/resources/");
+                    if (resources.isDirectory()) {
+                        context.getResources().createWebResourceSet(
+                                WebResourceRoot.ResourceSetType.RESOURCE_JAR,
+                                "/", resources.getAbsolutePath(), null, "/");
+                    }
+                }
+            } catch (IOException | URISyntaxException e) {
+                log.error(sm.getString("contextConfig.resourceJarFail", url,
+                        context.getName()));
+            }
+        }
+    }
+
+
+    private void configureContext(WebXml webxml) {
+        // As far as possible, process in alphabetical order so it is easy to
+        // check everything is present
+        // Some validation depends on correct public ID
+        context.setPublicId(webxml.getPublicId());
+
+        // Everything else in order
+        context.setEffectiveMajorVersion(webxml.getMajorVersion());
+        context.setEffectiveMinorVersion(webxml.getMinorVersion());
+
+        for (Map.Entry<String, String> entry : webxml.getContextParams().entrySet()) {
+            context.addParameter(entry.getKey(), entry.getValue());
+        }
+        context.setDenyUncoveredHttpMethods(
+                webxml.getDenyUncoveredHttpMethods());
+        context.setDisplayName(webxml.getDisplayName());
+        context.setDistributable(webxml.isDistributable());
+        for (ContextLocalEjb ejbLocalRef : webxml.getEjbLocalRefs().values()) {
+            context.getNamingResources().addLocalEjb(ejbLocalRef);
+        }
+        for (ContextEjb ejbRef : webxml.getEjbRefs().values()) {
+            context.getNamingResources().addEjb(ejbRef);
+        }
+        for (ContextEnvironment environment : webxml.getEnvEntries().values()) {
+            context.getNamingResources().addEnvironment(environment);
+        }
+        for (ErrorPage errorPage : webxml.getErrorPages().values()) {
+            context.addErrorPage(errorPage);
+        }
+        for (FilterDef filter : webxml.getFilters().values()) {
+            if (filter.getAsyncSupported() == null) {
+                filter.setAsyncSupported("false");
+            }
+            context.addFilterDef(filter);
+        }
+        for (FilterMap filterMap : webxml.getFilterMappings()) {
+            context.addFilterMap(filterMap);
+        }
+        context.setJspConfigDescriptor(webxml.getJspConfigDescriptor());
+        for (String listener : webxml.getListeners()) {
+            context.addApplicationListener(listener);
+        }
+        for (Map.Entry<String, String> entry :
+                webxml.getLocaleEncodingMappings().entrySet()) {
+            context.addLocaleEncodingMappingParameter(entry.getKey(),
+                    entry.getValue());
+        }
+        // Prevents IAE
+        if (webxml.getLoginConfig() != null) {
+            context.setLoginConfig(webxml.getLoginConfig());
+        }
+        for (MessageDestinationRef mdr :
+                webxml.getMessageDestinationRefs().values()) {
+            context.getNamingResources().addMessageDestinationRef(mdr);
+        }
+
+        // messageDestinations were ignored in Tomcat 6, so ignore here
+
+        context.setIgnoreAnnotations(webxml.isMetadataComplete());
+        for (Map.Entry<String, String> entry :
+                webxml.getMimeMappings().entrySet()) {
+            context.addMimeMapping(entry.getKey(), entry.getValue());
+        }
+        context.setRequestCharacterEncoding(webxml.getRequestCharacterEncoding());
+        // Name is just used for ordering
+        for (ContextResourceEnvRef resource :
+                webxml.getResourceEnvRefs().values()) {
+            context.getNamingResources().addResourceEnvRef(resource);
+        }
+        for (ContextResource resource : webxml.getResourceRefs().values()) {
+            context.getNamingResources().addResource(resource);
+        }
+        context.setResponseCharacterEncoding(webxml.getResponseCharacterEncoding());
+        boolean allAuthenticatedUsersIsAppRole =
+                webxml.getSecurityRoles().contains(
+                        SecurityConstraint.ROLE_ALL_AUTHENTICATED_USERS);
+        for (SecurityConstraint constraint : webxml.getSecurityConstraints()) {
+            if (allAuthenticatedUsersIsAppRole) {
+                constraint.treatAllAuthenticatedUsersAsApplicationRole();
+            }
+            context.addConstraint(constraint);
+        }
+        for (String role : webxml.getSecurityRoles()) {
+            context.addSecurityRole(role);
+        }
+        for (ContextService service : webxml.getServiceRefs().values()) {
+            context.getNamingResources().addService(service);
+        }
+        for (ServletDef servlet : webxml.getServlets().values()) {
+            Wrapper wrapper = context.createWrapper();
+            // Description is ignored
+            // Display name is ignored
+            // Icons are ignored
+
+            // jsp-file gets passed to the JSP Servlet as an init-param
+
+            if (servlet.getLoadOnStartup() != null) {
+                wrapper.setLoadOnStartup(servlet.getLoadOnStartup().intValue());
+            }
+            if (servlet.getEnabled() != null) {
+                wrapper.setEnabled(servlet.getEnabled().booleanValue());
+            }
+            wrapper.setName(servlet.getServletName());
+            Map<String,String> params = servlet.getParameterMap();
+            for (Map.Entry<String, String> entry : params.entrySet()) {
+                wrapper.addInitParameter(entry.getKey(), entry.getValue());
+            }
+            wrapper.setRunAs(servlet.getRunAs());
+            Set<SecurityRoleRef> roleRefs = servlet.getSecurityRoleRefs();
+            for (SecurityRoleRef roleRef : roleRefs) {
+                wrapper.addSecurityReference(
+                        roleRef.getName(), roleRef.getLink());
+            }
+            wrapper.setServletClass(servlet.getServletClass());
+            MultipartDef multipartdef = servlet.getMultipartDef();
+            if (multipartdef != null) {
+                long maxFileSize = -1;
+                long maxRequestSize = -1;
+                int fileSizeThreshold = 0;
+
+                if(null != multipartdef.getMaxFileSize()) {
+                    maxFileSize = Long.parseLong(multipartdef.getMaxFileSize());
+                }
+                if(null != multipartdef.getMaxRequestSize()) {
+                    maxRequestSize = Long.parseLong(multipartdef.getMaxRequestSize());
+                }
+                if(null != multipartdef.getFileSizeThreshold()) {
+                    fileSizeThreshold = Integer.parseInt(multipartdef.getFileSizeThreshold());
+                }
+
+                wrapper.setMultipartConfigElement(new MultipartConfigElement(
+                        multipartdef.getLocation(),
+                        maxFileSize,
+                        maxRequestSize,
+                        fileSizeThreshold));
+            }
+            if (servlet.getAsyncSupported() != null) {
+                wrapper.setAsyncSupported(
+                        servlet.getAsyncSupported().booleanValue());
+            }
+            wrapper.setOverridable(servlet.isOverridable());
+            context.addChild(wrapper);
+        }
+        for (Map.Entry<String, String> entry :
+                webxml.getServletMappings().entrySet()) {
+            context.addServletMappingDecoded(entry.getKey(), entry.getValue());
+        }
+        SessionConfig sessionConfig = webxml.getSessionConfig();
+        if (sessionConfig != null) {
+            if (sessionConfig.getSessionTimeout() != null) {
+                context.setSessionTimeout(
+                        sessionConfig.getSessionTimeout().intValue());
+            }
+            SessionCookieConfig scc = context.getServletContext().getSessionCookieConfig();
+            scc.setName(sessionConfig.getCookieName());
+            Map<String,String> attributes = sessionConfig.getCookieAttributes();
+            for (Map.Entry<String,String> attribute : attributes.entrySet()) {
+                scc.setAttribute(attribute.getKey(), attribute.getValue());
+            }
+            if (sessionConfig.getSessionTrackingModes().size() > 0) {
+                context.getServletContext().setSessionTrackingModes(
+                        sessionConfig.getSessionTrackingModes());
+            }
+        }
+
+        // Context doesn't use version directly
+
+        for (String welcomeFile : webxml.getWelcomeFiles()) {
+            /*
+             * The following will result in a welcome file of "" so don't add
+             * that to the context
+             * <welcome-file-list>
+             *   <welcome-file/>
+             * </welcome-file-list>
+             */
+            if (welcomeFile != null && welcomeFile.length() > 0) {
+                context.addWelcomeFile(welcomeFile);
+            }
+        }
+
+        // Do this last as it depends on servlets
+        for (JspPropertyGroup jspPropertyGroup :
+                webxml.getJspPropertyGroups()) {
+            String jspServletName = context.findServletMapping("*.jsp");
+            if (jspServletName == null) {
+                jspServletName = "jsp";
+            }
+            if (context.findChild(jspServletName) != null) {
+                for (String urlPattern : jspPropertyGroup.getUrlPatterns()) {
+                    context.addServletMappingDecoded(urlPattern, jspServletName, true);
+                }
+            } else {
+                if(log.isDebugEnabled()) {
+                    for (String urlPattern : jspPropertyGroup.getUrlPatterns()) {
+                        log.debug("Skipping " + urlPattern + " , no servlet " +
+                                jspServletName);
+                    }
+                }
+            }
+        }
+
+        for (Map.Entry<String, String> entry :
+                webxml.getPostConstructMethods().entrySet()) {
+            context.addPostConstructMethod(entry.getKey(), entry.getValue());
+        }
+
+        for (Map.Entry<String, String> entry :
+                webxml.getPreDestroyMethods().entrySet()) {
+            context.addPreDestroyMethod(entry.getKey(), entry.getValue());
+        }
+    }
+
+
+    private void convertJsps(WebXml webXml) {
+        Map<String,String> jspInitParams;
+        ServletDef jspServlet = webXml.getServlets().get("jsp");
+        if (jspServlet == null) {
+            jspInitParams = new HashMap<>();
+            Wrapper w = (Wrapper) context.findChild("jsp");
+            if (w != null) {
+                String[] params = w.findInitParameters();
+                for (String param : params) {
+                    jspInitParams.put(param, w.findInitParameter(param));
+                }
+            }
+        } else {
+            jspInitParams = jspServlet.getParameterMap();
+        }
+        for (ServletDef servletDef: webXml.getServlets().values()) {
+            if (servletDef.getJspFile() != null) {
+                convertJsp(servletDef, jspInitParams);
+            }
+        }
+    }
+
+    private void convertJsp(ServletDef servletDef,
+                            Map<String,String> jspInitParams) {
+        servletDef.setServletClass(org.apache.catalina.core.Constants.JSP_SERVLET_CLASS);
+        String jspFile = servletDef.getJspFile();
+        if ((jspFile != null) && !jspFile.startsWith("/")) {
+            if (context.isServlet22()) {
+                if(log.isDebugEnabled()) {
+                    log.debug(sm.getString("contextConfig.jspFile.warning",
+                            jspFile));
+                }
+                jspFile = "/" + jspFile;
+            } else {
+                throw new IllegalArgumentException
+                        (sm.getString("contextConfig.jspFile.error", jspFile));
+            }
+        }
+        servletDef.getParameterMap().put("jspFile", jspFile);
+        servletDef.setJspFile(null);
+        for (Map.Entry<String, String> initParam: jspInitParams.entrySet()) {
+            servletDef.addInitParameter(initParam.getKey(), initParam.getValue());
+        }
+    }
+
+
+    /**
+     * Scan /WEB-INF/lib for JARs and for each one found add it and any
+     * /META-INF/web-fragment.xml to the resulting Map. web-fragment.xml files
+     * will be parsed before being added to the map. Every JAR will be added and
+     * <code>null</code> will be used if no web-fragment.xml was found. Any JARs
+     * known not contain fragments will be skipped.
+     *
+     * @param application The main web.xml metadata
+     * @param webXmlParser The parser to use to process the web.xml file
+     * @return A map of JAR name to processed web fragment (if any)
+     */
+    protected Map<String,WebXml> processJarsForWebFragments(WebXml application,
+                                                            WebXmlParser webXmlParser) {
+
+        JarScanner jarScanner = context.getJarScanner();
+        boolean delegate = false;
+        if (context instanceof StandardContext) {
+            delegate = ((StandardContext) context).getDelegate();
+        }
+        boolean parseRequired = true;
+        Set<String> absoluteOrder = application.getAbsoluteOrdering();
+        if (absoluteOrder != null && absoluteOrder.isEmpty() &&
+                !context.getXmlValidation()) {
+            // Skip parsing when there is an empty absolute ordering and
+            // validation is not enabled
+            parseRequired = false;
+        }
+
+        FragmentJarScannerCallback callback =
+                new FragmentJarScannerCallback(webXmlParser, delegate, parseRequired);
+
+        jarScanner.scan(JarScanType.PLUGGABILITY,
+                context.getServletContext(), callback);
+
+        if (!callback.isOk()) {
+            ok = false;
+        }
+        return callback.getFragments();
+    }
+
 
     /**
      * Scan JARs for ServletContainerInitializer implementations.

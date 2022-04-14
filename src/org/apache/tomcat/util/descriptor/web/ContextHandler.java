@@ -29,4 +29,19 @@ public class ContextHandler  extends ResourceBase{
     public void addSoapHeaders(String localpart, String namespaceuri) {
         soapHeaders.put(localpart, namespaceuri);
     }
+
+    /**
+     * The Handler reference class.
+     */
+    private String handlerclass = null;
+
+    public String getHandlerclass() {
+        return this.handlerclass;
+    }
+
+    public void setHandlerclass(String handlerclass) {
+        this.handlerclass = handlerclass;
+    }
+
+
 }
