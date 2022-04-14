@@ -4,6 +4,20 @@ import java.net.URL;
 
 public interface WebResourceRoot extends Lifecycle{
 
+    /**
+     * Obtain the object that represents the resource at the given path. Note
+     * that the resource at that path may not exist. If the resource does not
+     * exist, the WebResource returned will be associated with the main
+     * WebResourceSet.
+     *
+     * @param path  The path for the resource of interest relative to the root
+     *              of the web application. It must start with '/'.
+     *
+     * @return  The object that represents the resource at the given path
+     */
+    WebResource getResource(String path);
+
+
     enum ResourceSetType {
         PRE,
         RESOURCE_JAR,

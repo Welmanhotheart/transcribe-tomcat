@@ -22,4 +22,12 @@ public class FragmentJarScannerCallback implements JarScannerCallback {
         this.parseRequired = parseRequired;
     }
 
+
+    public boolean isOk() {
+        return ok;
+    }
+    public Map<String,WebXml> getFragments() {
+        return fragments;
+    }
+
 }

@@ -1635,6 +1635,18 @@ public class ContextConfig  implements LifecycleListener {
 
     }
 
+    private static class HostWebXmlCacheCleaner implements LifecycleListener {
+
+        @Override
+        public void lifecycleEvent(LifecycleEvent event) {
+
+            if (Lifecycle.AFTER_DESTROY_EVENT.equals(event.getType())) {
+                Host host = (Host) event.getSource();
+                hostWebXmlCache.remove(host);
+            }
+        }
+    }
+
     /**
      * Executable task to scan a segment for annotations. Each task does the
      * same work as the for loop inside processAnnotations();
@@ -2460,6 +2472,79 @@ public class ContextConfig  implements LifecycleListener {
                 scis.add(sci);
             }
         }
+    }
+
+
+    protected File getHostConfigBase() {
+        File file = null;
+        if (context.getParent() instanceof Host) {
+            file = ((Host)context.getParent()).getConfigBaseFile();
+        }
+        return file;
+    }
+
+    /**
+     * Identify the host web.xml to be used and obtain an input source for
+     * it.
+     * @return an input source to the default per host web.xml
+     */
+    protected InputSource getHostWebXmlSource() {
+        File hostConfigBase = getHostConfigBase();
+        if (hostConfigBase == null) {
+            return null;
+        }
+
+        return getWebXmlSource(hostConfigBase.getPath(), false);
+    }
+
+    /**
+     * Utility method to create an input source from the specified XML file.
+     * @param filename  Name of the file (possibly with one or more leading path
+     *                  segments) to read
+     * @param global true if processing a shared resource, false if processing
+     *        a host based resource
+     * @return the input source
+     */
+    protected InputSource getWebXmlSource(String filename, boolean global) {
+        ConfigurationSource.Resource webXmlResource = null;
+        try {
+            if (global) {
+                if (Constants.DefaultWebXml.equals(filename)) {
+                    webXmlResource = ConfigFileLoader.getSource().getSharedWebXml();
+                } else {
+                    webXmlResource = ConfigFileLoader.getSource().getResource(filename);
+                }
+            } else {
+                String hostWebXml = Container.getConfigPath(context, Constants.HostWebXml);
+                webXmlResource = ConfigFileLoader.getSource().getResource(hostWebXml);
+            }
+        } catch (IOException e) {
+            // Ignore if not found
+            return null;
+        }
+
+        InputStream stream = null;
+        InputSource source = null;
+
+        try {
+            stream = webXmlResource.getInputStream();
+            source = new InputSource(webXmlResource.getURI().toString());
+            if (stream != null) {
+                source.setByteStream(stream);
+            }
+        } catch (Exception e) {
+            log.error(sm.getString("contextConfig.defaultError", filename, webXmlResource.getURI()), e);
+        } finally {
+            if (source == null && stream != null) {
+                try {
+                    stream.close();
+                } catch (IOException e) {
+                    // Ignore
+                }
+            }
+        }
+
+        return source;
     }
 
 

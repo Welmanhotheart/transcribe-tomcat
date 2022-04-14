@@ -160,6 +160,12 @@ public class StandardContext extends ContainerBase
      */
     private String defaultContextXml;
 
+    /**
+     * Override the default web xml location.
+     */
+    private String defaultWebXml;
+
+
     private String webappVersion = "";
 
 
@@ -952,6 +958,11 @@ public class StandardContext extends ContainerBase
 
     public String getDefaultContextXml() {
         return defaultContextXml;
+    }
+
+
+    public String getDefaultWebXml() {
+        return defaultWebXml;
     }
 
     @Override

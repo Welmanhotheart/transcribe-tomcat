@@ -1,5 +1,7 @@
 package org.apache.catalina.core;
 
+import jakarta.servlet.ServletRegistration;
+import jakarta.servlet.ServletSecurityElement;
 import org.apache.catalina.*;
 import org.apache.catalina.realm.NullRealm;
 import org.apache.catalina.util.ServerInfo;
@@ -8,6 +10,7 @@ import org.apache.juli.logging.LogFactory;
 
 import java.io.File;
 import java.util.Locale;
+import java.util.Set;
 
 public class StandardEngine extends ContainerBase implements Engine {
 
@@ -100,6 +103,11 @@ public class StandardEngine extends ContainerBase implements Engine {
             this.setRealm(configured);
         }
         return configured;
+    }
+
+    @Override
+    public Set<String> addServletSecurity(ServletRegistration.Dynamic registration, ServletSecurityElement servletSecurityElement) {
+        return null;
     }
 
     /**

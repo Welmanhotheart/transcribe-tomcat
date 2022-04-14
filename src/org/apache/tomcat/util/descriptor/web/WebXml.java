@@ -5,6 +5,7 @@ import jakarta.servlet.ServletContext;
 import jakarta.servlet.SessionTrackingMode;
 import jakarta.servlet.descriptor.JspConfigDescriptor;
 import jakarta.servlet.descriptor.JspPropertyGroupDescriptor;
+import jakarta.servlet.descriptor.TaglibDescriptor;
 import org.apache.catalina.org.apache.tomcat.util.descriptor.web.LoginConfig;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
@@ -2283,6 +2284,16 @@ public class WebXml extends XmlEncodingBase implements DocumentProperties.Charse
                 }
             }
         }
+    }
+
+    /**
+     * When merging/parsing web.xml files into this web.xml should the current
+     * set be completely replaced?
+     * @param replaceWelcomeFiles <code>true</code> to replace welcome files
+     *  rather than add to the list
+     */
+    public void setReplaceWelcomeFiles(boolean replaceWelcomeFiles) {
+        this.replaceWelcomeFiles = replaceWelcomeFiles;
     }
 
 
