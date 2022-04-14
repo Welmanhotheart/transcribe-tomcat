@@ -12,6 +12,7 @@ import org.apache.catalina.util.LifecycleMBeanBase;
 import org.apache.jasper.servlet.jakarta.servlet.ServletContainerInitializer;
 import org.apache.juli.logging.Log;
 import org.apache.tomcat.InstanceManager;
+import org.apache.tomcat.JarScanner;
 import org.apache.tomcat.util.descriptor.web.ErrorPage;
 import org.apache.tomcat.util.descriptor.web.FilterDef;
 import org.apache.tomcat.util.descriptor.web.FilterMap;
@@ -454,6 +455,31 @@ public class FailedContext  extends LifecycleMBeanBase implements Context {
     }
 
     @Override
+    public void addWelcomeFile(String name) {
+
+    }
+
+    @Override
+    public String findServletMapping(String pattern) {
+        return null;
+    }
+
+    @Override
+    public void addPostConstructMethod(String clazz, String method) {
+
+    }
+
+    @Override
+    public void addPreDestroyMethod(String clazz, String method) {
+
+    }
+
+    @Override
+    public JarScanner getJarScanner() {
+        return null;
+    }
+
+    @Override
     public boolean getParallelAnnotationScanning() {
         return false;
     }
@@ -480,6 +506,41 @@ public class FailedContext  extends LifecycleMBeanBase implements Context {
     }
 
     @Override
+    public void setPublicId(String publicId) {
+
+    }
+
+    @Override
+    public void setIgnoreAnnotations(boolean ignoreAnnotations) {
+
+    }
+
+    @Override
+    public void addMimeMapping(String extension, String mimeType) {
+
+    }
+
+    @Override
+    public void setRequestCharacterEncoding(String encoding) {
+
+    }
+
+    @Override
+    public void setResponseCharacterEncoding(String encoding) {
+
+    }
+
+    @Override
+    public String getResponseCharacterEncoding() {
+        return null;
+    }
+
+    @Override
+    public Wrapper createWrapper() {
+        return null;
+    }
+
+    @Override
     public void setResources(WebResourceRoot resources) {
 
     }
@@ -487,6 +548,16 @@ public class FailedContext  extends LifecycleMBeanBase implements Context {
     @Override
     public InstanceManager getInstanceManager() {
         return null;
+    }
+
+    @Override
+    public int getSessionTimeout() {
+        return 0;
+    }
+
+    @Override
+    public void setSessionTimeout(int timeout) {
+
     }
 
     @Override

@@ -431,6 +431,11 @@ public class StandardServer extends LifecycleMBeanBase implements Server {
 
     }
 
+    @Override
+    public NamingResourcesImpl getGlobalNamingResources() {
+        return null;
+    }
+
     /**
      * @return the specified Service (if it exists); otherwise return
      * <code>null</code>.

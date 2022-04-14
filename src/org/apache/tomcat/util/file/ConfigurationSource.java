@@ -8,6 +8,18 @@ import java.net.URI;
 import java.net.URL;
 
 public interface ConfigurationSource {
+
+    /**
+     * Returns the contents of the shared conf/web.xml file. This usually
+     * contains the declaration of the default and JSP servlets.
+     * @return the web.xml as an InputStream
+     * @throws IOException if an error occurs or if the resource does not exist
+     */
+    public default Resource getSharedWebXml()
+            throws IOException {
+        return getConfResource("web.xml");
+    }
+
     public static final ConfigurationSource DEFAULT = new ConfigurationSource() {
         protected final File userDir = new File(System.getProperty("user.dir"));
         protected final URI userDirUri = userDir.toURI();
@@ -60,7 +72,7 @@ public interface ConfigurationSource {
         }
 
         @Override
-        public void close() throws Exception {
+        public void close() throws IOException {
 
         }
 

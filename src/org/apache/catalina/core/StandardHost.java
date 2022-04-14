@@ -1,5 +1,7 @@
 package org.apache.catalina.core;
 
+import jakarta.servlet.ServletRegistration;
+import jakarta.servlet.ServletSecurityElement;
 import org.apache.catalina.*;
 import org.apache.catalina.valves.ErrorReportValve;
 import org.apache.juli.logging.Log;
@@ -9,6 +11,7 @@ import org.apache.tomcat.util.ExceptionUtils;
 import javax.management.ObjectName;
 import java.io.File;
 import java.io.IOException;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.regex.Pattern;
 
@@ -172,6 +175,12 @@ public class StandardHost extends ContainerBase implements Host {
     public String getName() {
         return name;
     }
+
+    @Override
+    public Set<String> addServletSecurity(ServletRegistration.Dynamic registration, ServletSecurityElement servletSecurityElement) {
+        return null;
+    }
+
     /**
      * @return <code>true</code> if XML context descriptors should be deployed.
      */

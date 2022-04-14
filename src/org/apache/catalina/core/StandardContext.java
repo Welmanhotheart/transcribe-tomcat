@@ -1,6 +1,9 @@
 package org.apache.catalina.core;
 
 import jakarta.servlet.ServletContext;
+import jakarta.servlet.ServletRegistration;
+import jakarta.servlet.ServletSecurityElement;
+import jakarta.servlet.descriptor.JspConfigDescriptor;
 import org.apache.catalina.*;
 import org.apache.catalina.deploy.NamingResourcesImpl;
 import org.apache.catalina.org.apache.tomcat.util.descriptor.web.LoginConfig;
@@ -9,6 +12,7 @@ import org.apache.jasper.servlet.jakarta.servlet.ServletContainerInitializer;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
 import org.apache.tomcat.InstanceManager;
+import org.apache.tomcat.JarScanner;
 import org.apache.tomcat.util.compat.JreCompat;
 import org.apache.tomcat.util.descriptor.XmlIdentifiers;
 import org.apache.tomcat.util.descriptor.web.*;
@@ -373,6 +377,11 @@ public class StandardContext extends ContainerBase
         }
     }
 
+    @Override
+    public Set<String> addServletSecurity(ServletRegistration.Dynamic registration, ServletSecurityElement servletSecurityElement) {
+        return null;
+    }
+
     /**
      * Add a new servlet mapping, replacing any existing mapping for
      * the specified pattern.
@@ -519,6 +528,41 @@ public class StandardContext extends ContainerBase
         }
     }
 
+    @Override
+    public void setPublicId(String publicId) {
+
+    }
+
+    @Override
+    public void setIgnoreAnnotations(boolean ignoreAnnotations) {
+
+    }
+
+    @Override
+    public void addMimeMapping(String extension, String mimeType) {
+
+    }
+
+    @Override
+    public void setRequestCharacterEncoding(String encoding) {
+
+    }
+
+    @Override
+    public void setResponseCharacterEncoding(String encoding) {
+
+    }
+
+    @Override
+    public String getResponseCharacterEncoding() {
+        return null;
+    }
+
+    @Override
+    public Wrapper createWrapper() {
+        return null;
+    }
+
 
     @Override
     public void setResources(WebResourceRoot resources) {
@@ -555,6 +599,16 @@ public class StandardContext extends ContainerBase
     @Override
     public InstanceManager getInstanceManager() {
         return instanceManager;
+    }
+
+    @Override
+    public int getSessionTimeout() {
+        return 0;
+    }
+
+    @Override
+    public void setSessionTimeout(int timeout) {
+
     }
 
 
@@ -813,12 +867,92 @@ public class StandardContext extends ContainerBase
     }
 
     @Override
+    public void addErrorPage(ErrorPage errorPage) {
+
+    }
+
+    @Override
+    public void addFilterDef(FilterDef filterDef) {
+
+    }
+
+    @Override
+    public void addFilterMap(FilterMap filterMap) {
+
+    }
+
+    @Override
     public void removeWrapperListener(String listener) {
 
     }
 
     @Override
+    public void setJspConfigDescriptor(JspConfigDescriptor descriptor) {
+
+    }
+
+    @Override
+    public void addLocaleEncodingMappingParameter(String locale, String encoding) {
+
+    }
+
+    @Override
+    public void addApplicationListener(String listener) {
+
+    }
+
+    @Override
+    public void setEffectiveMajorVersion(int major) {
+
+    }
+
+    @Override
+    public int getEffectiveMinorVersion() {
+        return 0;
+    }
+
+    @Override
+    public void setEffectiveMinorVersion(int minor) {
+
+    }
+
+    @Override
+    public void addParameter(String name, String value) {
+
+    }
+
+    @Override
     public void addServletContainerInitializer(ServletContainerInitializer sci, Set<Class<?>> classes) {
+
+    }
+
+    @Override
+    public boolean getDenyUncoveredHttpMethods() {
+        return false;
+    }
+
+    @Override
+    public String getDisplayName() {
+        return null;
+    }
+
+    @Override
+    public void setDistributable(boolean distributable) {
+
+    }
+
+    @Override
+    public boolean getDistributable() {
+        return false;
+    }
+
+    @Override
+    public void setDisplayName(String displayName) {
+
+    }
+
+    @Override
+    public void setDenyUncoveredHttpMethods(boolean denyUncoveredHttpMethods) {
 
     }
 
@@ -894,6 +1028,31 @@ public class StandardContext extends ContainerBase
 
     @Override
     public ServletContext getServletContext() {
+        return null;
+    }
+
+    @Override
+    public void addWelcomeFile(String name) {
+
+    }
+
+    @Override
+    public String findServletMapping(String pattern) {
+        return null;
+    }
+
+    @Override
+    public void addPostConstructMethod(String clazz, String method) {
+
+    }
+
+    @Override
+    public void addPreDestroyMethod(String clazz, String method) {
+
+    }
+
+    @Override
+    public JarScanner getJarScanner() {
         return null;
     }
 
@@ -1037,6 +1196,11 @@ public class StandardContext extends ContainerBase
 
     @Override
     public String getDocBase() {
+        return null;
+    }
+
+    @Override
+    public String getContainerSciFilter() {
         return null;
     }
 
