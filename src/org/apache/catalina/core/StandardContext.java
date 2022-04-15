@@ -1119,6 +1119,16 @@ public class StandardContext extends ContainerBase
         return defaultContextXml;
     }
 
+    /**
+     * Set the location of the default context xml that will be used.
+     * If not absolute, it'll be made relative to the engine's base dir
+     * ( which defaults to catalina.base system property ).
+     *
+     * @param defaultContextXml The default web xml
+     */
+    public void setDefaultContextXml(String defaultContextXml) {
+        this.defaultContextXml = defaultContextXml;
+    }
 
     public String getDefaultWebXml() {
         return defaultWebXml;
