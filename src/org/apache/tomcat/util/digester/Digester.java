@@ -110,12 +110,14 @@ public class Digester extends DefaultHandler2 {
      */
     protected boolean namespaceAware = false;
 
+    protected static IntrospectionUtils.PropertySource[] propertySources;
+
     /**
      * The body text of the current element.
      */
     protected StringBuilder bodyText = new StringBuilder();
 
-
+    private static boolean propertySourcesSet = false;
     /**
      * The stack of body text string buffers for surrounding elements.
      */
@@ -152,6 +154,25 @@ public class Digester extends DefaultHandler2 {
      * Fake attributes map (attributes are often used for object creation).
      */
     protected Map<Class<?>, List<String>> fakeAttributes = null;
+
+
+    public Digester() {
+        propertySourcesSet = true;
+        ArrayList<IntrospectionUtils.PropertySource> sourcesList = new ArrayList<>();
+        boolean systemPropertySourceFound = false;
+        if (propertySources != null) {
+            for (IntrospectionUtils.PropertySource source : propertySources) {
+                if (source instanceof SystemPropertySource) {
+                    systemPropertySourceFound = true;
+                }
+                sourcesList.add(source);
+            }
+        }
+        if (!systemPropertySourceFound) {
+            sourcesList.add(new SystemPropertySource());
+        }
+        source = sourcesList.toArray(new IntrospectionUtils.PropertySource[0]);
+    }
 
 
     public static boolean isGeneratedCodeLoaderSet() {
@@ -640,6 +661,27 @@ public class Digester extends DefaultHandler2 {
         } else {
             return new SAXException(message);
         }
+    }
+
+    /**
+     * Process notification of character data received from the body of
+     * an XML element.
+     *
+     * @param buffer The characters from the XML document
+     * @param start Starting offset into the buffer
+     * @param length Number of characters from the buffer
+     *
+     * @exception SAXException if a parsing error is to be reported
+     */
+    @Override
+    public void characters(char buffer[], int start, int length) throws SAXException {
+
+        if (saxLog.isDebugEnabled()) {
+            saxLog.debug("characters(" + new String(buffer, start, length) + ")");
+        }
+
+        bodyText.append(buffer, start, length);
+
     }
 
     /**
