@@ -520,6 +520,14 @@ public interface Context extends Container, ContextBind {
     public WebResourceRoot getResources();
 
     /**
+     * Add a resource which will be watched for reloading by the host auto
+     * deployer. Note: this will not be used in embedded mode.
+     *
+     * @param name Path to the resource, relative to docBase
+     */
+    public void addWatchedResource(String name);
+
+    /**
      * Set the public identifier of the deployment descriptor DTD that is
      * currently being parsed.
      *

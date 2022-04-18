@@ -80,6 +80,13 @@ public class StandardContext extends ContainerBase
     private String originalDocBase = null;
 
     /**
+     * The watched resources for this application.
+     */
+    private String watchedResources[] = new String[0];
+
+    private final Object watchedResourcesLock = new Object();
+
+    /**
      * The antiResourceLocking flag for this Context.
      */
     private boolean antiResourceLocking = false;
@@ -1049,6 +1056,22 @@ public class StandardContext extends ContainerBase
     @Override
     public void addPreDestroyMethod(String clazz, String method) {
 
+    }
+
+    /**
+     * Add a new watched resource to the set recognized by this Context.
+     *
+     * @param name New watched resource file name
+     */
+    @Override
+    public void addWatchedResource(String name) {
+
+        synchronized (watchedResourcesLock) {
+            String[] results = Arrays.copyOf(watchedResources, watchedResources.length + 1);
+            results[watchedResources.length] = name;
+            watchedResources = results;
+        }
+        fireContainerEvent("addWatchedResource", name);
     }
 
     @Override

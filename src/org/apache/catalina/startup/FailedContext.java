@@ -506,6 +506,11 @@ public class FailedContext  extends LifecycleMBeanBase implements Context {
     }
 
     @Override
+    public void addWatchedResource(String name) {
+
+    }
+
+    @Override
     public void setPublicId(String publicId) {
 
     }
