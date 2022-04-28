@@ -85,6 +85,11 @@ public class StandardHost extends ContainerBase implements Host {
     private String contextClass =
             "org.apache.catalina.core.StandardContext";
 
+    /**
+     * Work Directory base for applications.
+     */
+    private String workDir = null;
+
 
     /**
      * Create a new StandardHost component with the default basic Valve.
@@ -158,6 +163,25 @@ public class StandardHost extends ContainerBase implements Host {
         }
         super.startInternal();
     }
+
+    /**
+     * @return host work directory base.
+     */
+    public String getWorkDir() {
+        return workDir;
+    }
+
+
+    /**
+     * Set host work directory base.
+     *
+     * @param workDir the new base work folder for this host
+     */
+    public void setWorkDir(String workDir) {
+        this.workDir = workDir;
+    }
+
+
 
     @Override
     protected String getObjectNameKeyProperties() {

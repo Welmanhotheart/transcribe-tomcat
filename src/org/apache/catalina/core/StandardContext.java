@@ -1,28 +1,45 @@
 package org.apache.catalina.core;
 
-import jakarta.servlet.ServletContext;
-import jakarta.servlet.ServletRegistration;
-import jakarta.servlet.ServletSecurityElement;
+import jakarta.servlet.*;
 import jakarta.servlet.descriptor.JspConfigDescriptor;
+import jakarta.servlet.http.HttpSessionAttributeListener;
+import jakarta.servlet.http.HttpSessionIdListener;
+import jakarta.servlet.http.HttpSessionListener;
 import org.apache.catalina.*;
 import org.apache.catalina.deploy.NamingResourcesImpl;
+import org.apache.catalina.loader.WebappClassLoaderBase;
+import org.apache.catalina.loader.WebappLoader;
 import org.apache.catalina.org.apache.tomcat.util.descriptor.web.LoginConfig;
+import org.apache.catalina.session.StandardManager;
+import org.apache.catalina.util.CharsetMapper;
+import org.apache.catalina.util.ContextName;
 import org.apache.catalina.util.URLEncoder;
+import org.apache.catalina.webresources.StandardRoot;
 import org.apache.jasper.servlet.jakarta.servlet.ServletContainerInitializer;
 import org.apache.juli.logging.Log;
 import org.apache.juli.logging.LogFactory;
+import org.apache.naming.ContextBindings;
 import org.apache.tomcat.InstanceManager;
+import org.apache.tomcat.InstanceManagerBindings;
 import org.apache.tomcat.JarScanner;
+import org.apache.tomcat.util.ExceptionUtils;
 import org.apache.tomcat.util.compat.JreCompat;
 import org.apache.tomcat.util.descriptor.XmlIdentifiers;
 import org.apache.tomcat.util.descriptor.web.*;
+import org.apache.tomcat.util.http.CookieProcessor;
+import org.apache.tomcat.util.http.Rfc6265CookieProcessor;
 
 import javax.management.*;
+import javax.naming.NamingException;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -45,6 +62,36 @@ public class StandardContext extends ContainerBase
     private final ReadWriteLock resourcesLock = new ReentrantReadWriteLock();
 
     private WebResourceRoot resources;
+
+
+    private boolean addWebinfClassesResources = false;
+
+    /**
+     * The naming context listener for this web application.
+     */
+    private NamingContextListener namingContextListener = null;
+
+
+
+    /**
+     * Should the effective web.xml be logged when the context starts?
+     */
+    private boolean logEffectiveWebXml = false;
+
+    private int effectiveMajorVersion = 3;
+
+    private int effectiveMinorVersion = 0;
+
+    /**
+     * The notification sequence number.
+     */
+    private AtomicLong sequenceNumber = new AtomicLong(0);
+
+    /**
+     * The naming resources for this web application.
+     */
+    private NamingResourcesImpl namingResources = null;
+
 
     /**
      * Lifecycle provider.
@@ -155,6 +202,28 @@ public class StandardContext extends ContainerBase
      */
     private boolean delegate = JreCompat.isGraalAvailable();
 
+    /**
+     * The list of instantiated application event listener objects. Note that
+     * SCIs and other code may use the pluggability APIs to add listener
+     * instances directly to this list before the application starts.
+     */
+    private List<Object> applicationEventListenersList = new CopyOnWriteArrayList<>();
+
+    /**
+     * The set of application listeners that are required to have limited access
+     * to ServletContext methods. See Servlet 3.1 section 4.4.
+     */
+    private final Set<Object> noPluggabilityListeners = new HashSet<>();
+
+
+    /**
+     * The set of instantiated application lifecycle listener objects. Note that
+     * SCIs and other code may use the pluggability APIs to add listener
+     * instances directly to this list before the application starts.
+     */
+    private Object applicationLifecycleListenersObjects[] =
+            new Object[0];
+
 
     /**
      * The "correctly configured" flag for this Context.
@@ -179,6 +248,34 @@ public class StandardContext extends ContainerBase
 
     private String webappVersion = "";
 
+    private CookieProcessor cookieProcessor;
+
+
+    /**
+     * JNDI use flag.
+     */
+    private boolean useNaming = true;
+
+
+    /**
+     * @return true if the internal naming support is used.
+     */
+    public boolean isUseNaming() {
+        return useNaming;
+    }
+
+    /**
+     * The Locale to character set mapper for this application.
+     */
+    private CharsetMapper charsetMapper = null;
+
+    /**
+     * The Java class name of the CharsetMapper class to be created.
+     */
+    private String charsetMapperClass =
+            "org.apache.catalina.util.CharsetMapper";
+
+    private boolean jndiExceptionOnFailedWrite = true;
 
     /**
      * The Loader implementation with which this Container is associated.
@@ -186,8 +283,30 @@ public class StandardContext extends ContainerBase
     private Loader loader = null;
     private final ReadWriteLock loaderLock = new ReentrantReadWriteLock();
 
-    // ----------------------------------------------------------- Constructors
 
+    // ------------------------------------------------------ Public Properties
+
+    /**
+     * @return whether or not an attempt to modify the JNDI context will trigger
+     * an exception or if the request will be ignored.
+     */
+    public boolean getJndiExceptionOnFailedWrite() {
+        return jndiExceptionOnFailedWrite;
+    }
+
+
+    /**
+     * Controls whether or not an attempt to modify the JNDI context will
+     * trigger an exception or if the request will be ignored.
+     *
+     * @param jndiExceptionOnFailedWrite <code>false</code> to avoid an exception
+     */
+    public void setJndiExceptionOnFailedWrite(
+            boolean jndiExceptionOnFailedWrite) {
+        this.jndiExceptionOnFailedWrite = jndiExceptionOnFailedWrite;
+    }
+
+    // ----------------------------------------------------------- Constructors
 
     /**
      * Create a new StandardContext component with the default basic Valve.
@@ -253,6 +372,23 @@ public class StandardContext extends ContainerBase
      * the server's home if not absolute).
      */
     private String workDir = null;
+
+    /**
+     * The ServletContext implementation associated with this Context.
+     */
+    protected ApplicationContext context = null;
+
+    /**
+     * The distributable flag for this web application.
+     */
+    private boolean distributable = false;
+
+    /**
+     * The ordered set of ServletContainerInitializers for this web application.
+     */
+    private Map<ServletContainerInitializer,Set<Class<?>>> initializers =
+            new LinkedHashMap<>();
+
 
     /**
      * @return the work directory for this Context.
@@ -1242,9 +1378,15 @@ public class StandardContext extends ContainerBase
 
     }
 
+    /**
+     * @return the set of watched resources for this Context. If none are
+     * defined, a zero length array will be returned.
+     */
     @Override
     public String[] findWatchedResources() {
-        return new String[0];
+        synchronized (watchedResourcesLock) {
+            return watchedResources;
+        }
     }
 
     @Override
@@ -1281,4 +1423,1228 @@ public class StandardContext extends ContainerBase
     public void unbind(boolean usePrivilegedAction, ClassLoader originalClassLoader) {
 
     }
+
+    @Override
+    public String getBaseName() {
+        return new ContextName(path, webappVersion).getBaseName();
+    }
+
+    @Override
+    public void setCookieProcessor(CookieProcessor cookieProcessor) {
+        if (cookieProcessor == null) {
+            throw new IllegalArgumentException(
+                    sm.getString("standardContext.cookieProcessor.null"));
+        }
+        this.cookieProcessor = cookieProcessor;
+    }
+
+    /**
+     * @return the Locale to character set mapper for this Context.
+     */
+    public CharsetMapper getCharsetMapper() {
+
+        // Create a mapper the first time it is requested
+        if (this.charsetMapper == null) {
+            try {
+                Class<?> clazz = Class.forName(charsetMapperClass);
+                this.charsetMapper = (CharsetMapper) clazz.getConstructor().newInstance();
+            } catch (Throwable t) {
+                ExceptionUtils.handleThrowable(t);
+                this.charsetMapper = new CharsetMapper();
+            }
+        }
+
+        return this.charsetMapper;
+
+    }
+
+    /**
+     * Set the work directory for this Context.
+     *
+     * @param workDir The new work directory
+     */
+    public void setWorkDir(String workDir) {
+
+        this.workDir = workDir;
+
+        if (getState().isAvailable()) {
+            postWorkDirectory();
+        }
+    }
+
+
+    /**
+     * Set the appropriate context attribute for our work directory.
+     */
+    protected void postWorkDirectory() {
+
+        // Acquire (or calculate) the work directory path
+        String workDir = getWorkDir();
+        if (workDir == null || workDir.length() == 0) {
+
+            // Retrieve our parent (normally a host) name
+            String hostName = null;
+            String engineName = null;
+            String hostWorkDir = null;
+            Container parentHost = getParent();
+            if (parentHost != null) {
+                hostName = parentHost.getName();
+                if (parentHost instanceof StandardHost) {
+                    hostWorkDir = ((StandardHost)parentHost).getWorkDir();
+                }
+                Container parentEngine = parentHost.getParent();
+                if (parentEngine != null) {
+                    engineName = parentEngine.getName();
+                }
+            }
+            if ((hostName == null) || (hostName.length() < 1)) {
+                hostName = "_";
+            }
+            if ((engineName == null) || (engineName.length() < 1)) {
+                engineName = "_";
+            }
+
+            String temp = getBaseName();
+            if (temp.startsWith("/")) {
+                temp = temp.substring(1);
+            }
+            temp = temp.replace('/', '_');
+            temp = temp.replace('\\', '_');
+            if (temp.length() < 1) {
+                temp = ContextName.ROOT_NAME;
+            }
+            if (hostWorkDir != null ) {
+                workDir = hostWorkDir + File.separator + temp;
+            } else {
+                workDir = "work" + File.separator + engineName +
+                        File.separator + hostName + File.separator + temp;
+            }
+            setWorkDir(workDir);
+        }
+
+        // Create this directory if necessary
+        File dir = new File(workDir);
+        if (!dir.isAbsolute()) {
+            String catalinaHomePath = null;
+            try {
+                catalinaHomePath = getCatalinaBase().getCanonicalPath();
+                dir = new File(catalinaHomePath, workDir);
+            } catch (IOException e) {
+                log.warn(sm.getString("standardContext.workCreateException",
+                        workDir, catalinaHomePath, getName()), e);
+            }
+        }
+        if (!dir.mkdirs() && !dir.isDirectory()) {
+            log.warn(sm.getString("standardContext.workCreateFail", dir,
+                    getName()));
+        }
+
+        // Set the appropriate servlet context attribute
+        if (context == null) {
+            getServletContext();
+        }
+        context.setAttribute(ServletContext.TEMPDIR, dir);
+        context.setAttributeReadOnly(ServletContext.TEMPDIR);
+    }
+
+    /**
+     * Allocate resources, including proxy.
+     * @throws LifecycleException if a start error occurs
+     */
+    public void resourcesStart() throws LifecycleException {
+
+        // Check current status in case resources were added that had already
+        // been started
+        if (!resources.getState().isAvailable()) {
+            resources.start();
+        }
+
+        if (effectiveMajorVersion >=3 && addWebinfClassesResources) {
+            WebResource webinfClassesResource = resources.getResource(
+                    "/WEB-INF/classes/META-INF/resources");
+            if (webinfClassesResource.isDirectory()) {
+                getResources().createWebResourceSet(
+                        WebResourceRoot.ResourceSetType.RESOURCE_JAR, "/",
+                        webinfClassesResource.getURL(), "/");
+            }
+        }
+    }
+
+    /**
+     * Naming context listener accessor.
+     *
+     * @return the naming context listener associated with the webapp
+     */
+    public NamingContextListener getNamingContextListener() {
+        return namingContextListener;
+    }
+
+    /**
+     * Naming context listener setter.
+     *
+     * @param namingContextListener the new naming context listener
+     */
+    public void setNamingContextListener(NamingContextListener namingContextListener) {
+        this.namingContextListener = namingContextListener;
+    }
+
+
+    /**
+     * Get naming context full name.
+     *
+     * @return the context name
+     */
+    private String getNamingContextName() {
+        if (namingContextName == null) {
+            Container parent = getParent();
+            if (parent == null) {
+                namingContextName = getName();
+            } else {
+                Stack<String> stk = new Stack<>();
+                StringBuilder buff = new StringBuilder();
+                while (parent != null) {
+                    stk.push(parent.getName());
+                    parent = parent.getParent();
+                }
+                while (!stk.empty()) {
+                    buff.append("/" + stk.pop());
+                }
+                buff.append(getName());
+                namingContextName = buff.toString();
+            }
+        }
+        return namingContextName;
+    }
+
+
+    /**
+     * Name of the associated naming context.
+     */
+    private String namingContextName = null;
+    private final Object namingToken = new Object();
+
+
+    @Override
+    public Object getNamingToken() {
+        return namingToken;
+    }
+
+    /**
+     * Bind current thread, both for CL purposes and for JNDI ENC support
+     * during : startup, shutdown and reloading of the context.
+     *
+     * @return the previous context class loader
+     */
+    protected ClassLoader bindThread() {
+
+        ClassLoader oldContextClassLoader = bind(false, null);
+
+        if (isUseNaming()) {
+            try {
+                ContextBindings.bindThread(this, getNamingToken());
+            } catch (NamingException e) {
+                // Silent catch, as this is a normal case during the early
+                // startup stages
+            }
+        }
+
+        return oldContextClassLoader;
+    }
+
+    /**
+     * Enables the RMI Target memory leak detection to be controlled. This is
+     * necessary since the detection can only work if some of the modularity
+     * checks are disabled.
+     */
+    private boolean clearReferencesRmiTargets = true;
+
+    /**
+     * Should Tomcat attempt to terminate threads that have been started by the
+     * web application? Stopping threads is performed via the deprecated (for
+     * good reason) <code>Thread.stop()</code> method and is likely to result in
+     * instability. As such, enabling this should be viewed as an option of last
+     * resort in a development environment and is not recommended in a
+     * production environment. If not specified, the default value of
+     * <code>false</code> will be used.
+     */
+    private boolean clearReferencesStopThreads = false;
+
+    /**
+     * Should Tomcat attempt to terminate any {@link java.util.TimerThread}s
+     * that have been started by the web application? If not specified, the
+     * default value of <code>false</code> will be used.
+     */
+    private boolean clearReferencesStopTimerThreads = false;
+
+
+    /**
+     * If an HttpClient keep-alive timer thread has been started by this web
+     * application and is still running, should Tomcat change the context class
+     * loader from the current {@link ClassLoader} to
+     * {@link ClassLoader#getParent()} to prevent a memory leak? Note that the
+     * keep-alive timer thread will stop on its own once the keep-alives all
+     * expire however, on a busy system that might not happen for some time.
+     */
+    private boolean clearReferencesHttpClientKeepAliveThread = true;
+
+    /**
+     * Should Tomcat attempt to clear references to classes loaded by the web
+     * application class loader from the ObjectStreamClass caches?
+     */
+    private boolean clearReferencesObjectStreamClassCaches = true;
+
+    /**
+     * Should Tomcat attempt to clear references to classes loaded by this class
+     * loader from ThreadLocals?
+     */
+    private boolean clearReferencesThreadLocals = true;
+
+
+    public boolean getClearReferencesRmiTargets() {
+        return this.clearReferencesRmiTargets;
+    }
+
+    /**
+     * @return the clearReferencesStopThreads flag for this Context.
+     */
+    public boolean getClearReferencesStopThreads() {
+        return this.clearReferencesStopThreads;
+    }
+
+    /**
+     * @return the clearReferencesStopTimerThreads flag for this Context.
+     */
+    public boolean getClearReferencesStopTimerThreads() {
+        return this.clearReferencesStopTimerThreads;
+    }
+
+    /**
+     * @return the clearReferencesHttpClientKeepAliveThread flag for this
+     * Context.
+     */
+    public boolean getClearReferencesHttpClientKeepAliveThread() {
+        return this.clearReferencesHttpClientKeepAliveThread;
+    }
+
+    public boolean getClearReferencesObjectStreamClassCaches() {
+        return clearReferencesObjectStreamClassCaches;
+    }
+
+    public boolean getClearReferencesThreadLocals() {
+        return clearReferencesThreadLocals;
+    }
+
+
+
+    @Override
+    public boolean getConfigured() {
+        return this.configured;
+    }
+
+
+    @Override
+    public InstanceManager createInstanceManager() {
+        javax.naming.Context context = null;
+        if (isUseNaming() && getNamingContextListener() != null) {
+            context = getNamingContextListener().getEnvContext();
+        }
+        Map<String, Map<String, String>> injectionMap = buildInjectionMap(
+                getIgnoreAnnotations() ? new NamingResourcesImpl(): getNamingResources());
+        return new DefaultInstanceManager(context, injectionMap,
+                this, this.getClass().getClassLoader());
+    }
+
+    private void addInjectionTarget(Injectable resource, Map<String, Map<String, String>> injectionMap) {
+        List<InjectionTarget> injectionTargets = resource.getInjectionTargets();
+        if (injectionTargets != null && injectionTargets.size() > 0) {
+            String jndiName = resource.getName();
+            for (InjectionTarget injectionTarget: injectionTargets) {
+                String clazz = injectionTarget.getTargetClass();
+                Map<String, String> injections = injectionMap.get(clazz);
+                if (injections == null) {
+                    injections = new HashMap<>();
+                    injectionMap.put(clazz, injections);
+                }
+                injections.put(injectionTarget.getTargetName(), jndiName);
+            }
+        }
+    }
+
+    private Map<String, Map<String, String>> buildInjectionMap(NamingResourcesImpl namingResources) {
+        Map<String, Map<String, String>> injectionMap = new HashMap<>();
+        for (Injectable resource: namingResources.findLocalEjbs()) {
+            addInjectionTarget(resource, injectionMap);
+        }
+        for (Injectable resource: namingResources.findEjbs()) {
+            addInjectionTarget(resource, injectionMap);
+        }
+        for (Injectable resource: namingResources.findEnvironments()) {
+            addInjectionTarget(resource, injectionMap);
+        }
+        for (Injectable resource: namingResources.findMessageDestinationRefs()) {
+            addInjectionTarget(resource, injectionMap);
+        }
+        for (Injectable resource: namingResources.findResourceEnvRefs()) {
+            addInjectionTarget(resource, injectionMap);
+        }
+        for (Injectable resource: namingResources.findResources()) {
+            addInjectionTarget(resource, injectionMap);
+        }
+        for (Injectable resource: namingResources.findServices()) {
+            addInjectionTarget(resource, injectionMap);
+        }
+        return injectionMap;
+    }
+
+
+    @Override
+    public Object[] getApplicationEventListeners() {
+        return applicationEventListenersList.toArray();
+    }
+
+    /**
+     * {@inheritDoc}
+     *
+     * Note that this implementation is not thread safe. If two threads call
+     * this method concurrently, the result may be either set of listeners or a
+     * the union of both.
+     */
+    @Override
+    public void setApplicationEventListeners(Object listeners[]) {
+        applicationEventListenersList.clear();
+        if (listeners != null && listeners.length > 0) {
+            applicationEventListenersList.addAll(Arrays.asList(listeners));
+        }
+    }
+
+
+    /**
+     * Add a listener to the end of the list of initialized application event
+     * listeners.
+     *
+     * @param listener The listener to add
+     */
+    public void addApplicationEventListener(Object listener) {
+        applicationEventListenersList.add(listener);
+    }
+
+
+    @Override
+    public Object[] getApplicationLifecycleListeners() {
+        return applicationLifecycleListenersObjects;
+    }
+
+
+
+    /**
+     * Store the set of initialized application lifecycle listener objects,
+     * in the order they were specified in the web application deployment
+     * descriptor, for this application.
+     *
+     * @param listeners The set of instantiated listener objects.
+     */
+    @Override
+    public void setApplicationLifecycleListeners(Object listeners[]) {
+        applicationLifecycleListenersObjects = listeners;
+    }
+
+    /**
+     * Configure the set of instantiated application event listeners
+     * for this Context.
+     * @return <code>true</code> if all listeners wre
+     * initialized successfully, or <code>false</code> otherwise.
+     */
+    public boolean listenerStart() {
+
+        if (log.isDebugEnabled()) {
+            log.debug("Configuring application event listeners");
+        }
+
+        // Instantiate the required listeners
+        String listeners[] = findApplicationListeners();
+        Object results[] = new Object[listeners.length];
+        boolean ok = true;
+        for (int i = 0; i < results.length; i++) {
+            if (getLogger().isDebugEnabled()) {
+                getLogger().debug(" Configuring event listener class '" +
+                        listeners[i] + "'");
+            }
+            try {
+                String listener = listeners[i];
+                results[i] = getInstanceManager().newInstance(listener);
+            } catch (Throwable t) {
+                t = ExceptionUtils.unwrapInvocationTargetException(t);
+                ExceptionUtils.handleThrowable(t);
+                getLogger().error(sm.getString(
+                        "standardContext.applicationListener", listeners[i]), t);
+                ok = false;
+            }
+        }
+        if (!ok) {
+            getLogger().error(sm.getString("standardContext.applicationSkipped"));
+            return false;
+        }
+
+        // Sort listeners in two arrays
+        List<Object> eventListeners = new ArrayList<>();
+        List<Object> lifecycleListeners = new ArrayList<>();
+        for (Object result : results) {
+            if ((result instanceof ServletContextAttributeListener)
+                    || (result instanceof ServletRequestAttributeListener)
+                    || (result instanceof ServletRequestListener)
+                    || (result instanceof HttpSessionIdListener)
+                    || (result instanceof HttpSessionAttributeListener)) {
+                eventListeners.add(result);
+            }
+            if ((result instanceof ServletContextListener)
+                    || (result instanceof HttpSessionListener)) {
+                lifecycleListeners.add(result);
+            }
+        }
+
+        // Listener instances may have been added directly to this Context by
+        // ServletContextInitializers and other code via the pluggability APIs.
+        // Put them these listeners after the ones defined in web.xml and/or
+        // annotations then overwrite the list of instances with the new, full
+        // list.
+        eventListeners.addAll(Arrays.asList(getApplicationEventListeners()));
+        setApplicationEventListeners(eventListeners.toArray());
+        for (Object lifecycleListener: getApplicationLifecycleListeners()) {
+            lifecycleListeners.add(lifecycleListener);
+            if (lifecycleListener instanceof ServletContextListener) {
+                noPluggabilityListeners.add(lifecycleListener);
+            }
+        }
+        setApplicationLifecycleListeners(lifecycleListeners.toArray());
+
+        // Send application start events
+
+        if (getLogger().isDebugEnabled()) {
+            getLogger().debug("Sending application start events");
+        }
+
+        // Ensure context is not null
+        getServletContext();
+        context.setNewServletContextListenerAllowed(false);
+
+        Object instances[] = getApplicationLifecycleListeners();
+        if (instances == null || instances.length == 0) {
+            return ok;
+        }
+
+        ServletContextEvent event = new ServletContextEvent(getServletContext());
+        ServletContextEvent tldEvent = null;
+        if (noPluggabilityListeners.size() > 0) {
+            noPluggabilityServletContext = new NoPluggabilityServletContext(getServletContext());
+            tldEvent = new ServletContextEvent(noPluggabilityServletContext);
+        }
+        for (Object instance : instances) {
+            if (!(instance instanceof ServletContextListener)) {
+                continue;
+            }
+            ServletContextListener listener = (ServletContextListener) instance;
+            try {
+                fireContainerEvent("beforeContextInitialized", listener);
+                if (noPluggabilityListeners.contains(listener)) {
+                    listener.contextInitialized(tldEvent);
+                } else {
+                    listener.contextInitialized(event);
+                }
+                fireContainerEvent("afterContextInitialized", listener);
+            } catch (Throwable t) {
+                ExceptionUtils.handleThrowable(t);
+                fireContainerEvent("afterContextInitialized", listener);
+                getLogger().error(sm.getString("standardContext.listenerStart",
+                        instance.getClass().getName()), t);
+                ok = false;
+            }
+        }
+        return ok;
+
+    }
+
+    @Override
+    protected synchronized void startInternal() throws LifecycleException {
+
+        if(log.isDebugEnabled()) {
+            log.debug("Starting " + getBaseName());
+        }
+
+        // Send j2ee.state.starting notification
+        if (this.getObjectName() != null) {
+            Notification notification = new Notification("j2ee.state.starting",
+                    this.getObjectName(), sequenceNumber.getAndIncrement());
+            broadcaster.sendNotification(notification);
+        }
+
+        setConfigured(false);
+        boolean ok = true;
+
+        // Currently this is effectively a NO-OP but needs to be called to
+        // ensure the NamingResources follows the correct lifecycle
+        if (namingResources != null) {
+            namingResources.start();
+        }
+
+        // Post work directory
+        postWorkDirectory();
+
+        // Add missing components as necessary
+        if (getResources() == null) {   // (1) Required by Loader
+            if (log.isDebugEnabled()) {
+                log.debug("Configuring default Resources");
+            }
+
+            try {
+                setResources(new StandardRoot(this));
+            } catch (IllegalArgumentException e) {
+                log.error(sm.getString("standardContext.resourcesInit"), e);
+                ok = false;
+            }
+        }
+        if (ok) {
+            resourcesStart();
+        }
+
+        if (getLoader() == null) {
+            WebappLoader webappLoader = new WebappLoader();
+            webappLoader.setDelegate(getDelegate());
+            setLoader(webappLoader);
+        }
+
+        // An explicit cookie processor hasn't been specified; use the default
+        if (cookieProcessor == null) {
+            cookieProcessor = new Rfc6265CookieProcessor();
+        }
+
+        // Initialize character set mapper
+        getCharsetMapper();
+
+        // Reading the "catalina.useNaming" environment variable
+        String useNamingProperty = System.getProperty("catalina.useNaming");
+        if ((useNamingProperty != null)
+                && (useNamingProperty.equals("false"))) {
+            useNaming = false;
+        }
+
+        if (ok && isUseNaming()) {
+            if (getNamingContextListener() == null) {
+                NamingContextListener ncl = new NamingContextListener();
+                ncl.setName(getNamingContextName());
+                ncl.setExceptionOnFailedWrite(getJndiExceptionOnFailedWrite());
+                addLifecycleListener(ncl);
+                setNamingContextListener(ncl);
+            }
+        }
+
+        // Standard container startup
+        if (log.isDebugEnabled()) {
+            log.debug("Processing standard container startup");
+        }
+
+
+        // Binding thread
+        ClassLoader oldCCL = bindThread();
+
+        try {
+            if (ok) {
+                // Start our subordinate components, if any
+                Loader loader = getLoader();
+                if (loader instanceof Lifecycle) {
+                    ((Lifecycle) loader).start();
+                }
+
+                // since the loader just started, the webapp classloader is now
+                // created.
+                if (loader.getClassLoader() instanceof WebappClassLoaderBase) {
+                    WebappClassLoaderBase cl = (WebappClassLoaderBase) loader.getClassLoader();
+                    cl.setClearReferencesRmiTargets(getClearReferencesRmiTargets());
+                    cl.setClearReferencesStopThreads(getClearReferencesStopThreads());
+                    cl.setClearReferencesStopTimerThreads(getClearReferencesStopTimerThreads());
+                    cl.setClearReferencesHttpClientKeepAliveThread(getClearReferencesHttpClientKeepAliveThread());
+                    cl.setClearReferencesObjectStreamClassCaches(getClearReferencesObjectStreamClassCaches());
+                    cl.setClearReferencesThreadLocals(getClearReferencesThreadLocals());
+                }
+
+                // By calling unbindThread and bindThread in a row, we setup the
+                // current Thread CCL to be the webapp classloader
+                unbindThread(oldCCL);
+                oldCCL = bindThread();
+
+                // Initialize logger again. Other components might have used it
+                // too early, so it should be reset.
+                logger = null;
+                getLogger();
+
+                Realm realm = getRealmInternal();
+                if(null != realm) {
+                    if (realm instanceof Lifecycle) {
+                        ((Lifecycle) realm).start();
+                    }
+
+                    // Place the CredentialHandler into the ServletContext so
+                    // applications can have access to it. Wrap it in a "safe"
+                    // handler so application's can't modify it.
+                    CredentialHandler safeHandler = new CredentialHandler() {
+                        @Override
+                        public boolean matches(String inputCredentials, String storedCredentials) {
+                            return getRealmInternal().getCredentialHandler().matches(inputCredentials, storedCredentials);
+                        }
+
+                        @Override
+                        public String mutate(String inputCredentials) {
+                            return getRealmInternal().getCredentialHandler().mutate(inputCredentials);
+                        }
+                    };
+                    context.setAttribute(Globals.CREDENTIAL_HANDLER, safeHandler);
+                }
+
+                // Notify our interested LifecycleListeners
+                fireLifecycleEvent(Lifecycle.CONFIGURE_START_EVENT, null);
+
+                // Start our child containers, if not already started
+                for (Container child : findChildren()) {
+                    if (!child.getState().isAvailable()) {
+                        child.start();
+                    }
+                }
+
+                // Start the Valves in our pipeline (including the basic),
+                // if any
+                if (pipeline instanceof Lifecycle) {
+                    ((Lifecycle) pipeline).start();
+                }
+
+                // Acquire clustered manager
+                Manager contextManager = null;
+                Manager manager = getManager();
+                if (manager == null) {
+                    if (log.isDebugEnabled()) {
+                        log.debug(sm.getString("standardContext.cluster.noManager",
+                                Boolean.valueOf((getCluster() != null)),
+                                Boolean.valueOf(distributable)));
+                    }
+                    if ((getCluster() != null) && distributable) {
+                        try {
+                            contextManager = getCluster().createManager(getName());
+                        } catch (Exception ex) {
+                            log.error(sm.getString("standardContext.cluster.managerError"), ex);
+                            ok = false;
+                        }
+                    } else {
+                        contextManager = new StandardManager();
+                    }
+                }
+
+                // Configure default manager if none was specified
+                if (contextManager != null) {
+                    if (log.isDebugEnabled()) {
+                        log.debug(sm.getString("standardContext.manager",
+                                contextManager.getClass().getName()));
+                    }
+                    setManager(contextManager);
+                }
+
+                if (manager!=null && (getCluster() != null) && distributable) {
+                    //let the cluster know that there is a context that is distributable
+                    //and that it has its own manager
+                    getCluster().registerManager(manager);
+                }
+            }
+
+            if (!getConfigured()) {
+                log.error(sm.getString("standardContext.configurationFail"));
+                ok = false;
+            }
+
+            // We put the resources into the servlet context
+            if (ok) {
+                getServletContext().setAttribute
+                        (Globals.RESOURCES_ATTR, getResources());
+
+                if (getInstanceManager() == null) {
+                    setInstanceManager(createInstanceManager());
+                }
+                getServletContext().setAttribute(
+                        InstanceManager.class.getName(), getInstanceManager());
+                InstanceManagerBindings.bind(getLoader().getClassLoader(), getInstanceManager());
+
+                // Create context attributes that will be required
+                getServletContext().setAttribute(
+                        JarScanner.class.getName(), getJarScanner());
+
+                // Make the version info available
+                getServletContext().setAttribute(Globals.WEBAPP_VERSION, getWebappVersion());
+            }
+
+            // Set up the context init params
+            mergeParameters();
+
+            // Call ServletContainerInitializers
+            for (Map.Entry<ServletContainerInitializer, Set<Class<?>>> entry :
+                    initializers.entrySet()) {
+                try {
+                    entry.getKey().onStartup(entry.getValue(),
+                            getServletContext());
+                } catch (ServletException e) {
+                    log.error(sm.getString("standardContext.sciFail"), e);
+                    ok = false;
+                    break;
+                }
+            }
+
+            // Configure and call application event listeners
+            if (ok) {
+                if (!listenerStart()) {
+                    log.error(sm.getString("standardContext.listenerFail"));
+                    ok = false;
+                }
+            }
+
+            // Check constraints for uncovered HTTP methods
+            // Needs to be after SCIs and listeners as they may programmatically
+            // change constraints
+            if (ok) {
+                checkConstraintsForUncoveredMethods(findConstraints());
+            }
+
+            try {
+                // Start manager
+                Manager manager = getManager();
+                if (manager instanceof Lifecycle) {
+                    ((Lifecycle) manager).start();
+                }
+            } catch(Exception e) {
+                log.error(sm.getString("standardContext.managerFail"), e);
+                ok = false;
+            }
+
+            // Configure and call application filters
+            if (ok) {
+                if (!filterStart()) {
+                    log.error(sm.getString("standardContext.filterFail"));
+                    ok = false;
+                }
+            }
+
+            // Load and initialize all "load on startup" servlets
+            if (ok) {
+                if (!loadOnStartup(findChildren())){
+                    log.error(sm.getString("standardContext.servletFail"));
+                    ok = false;
+                }
+            }
+
+            // Start ContainerBackgroundProcessor thread
+            super.threadStart();
+        } finally {
+            // Unbinding thread
+            unbindThread(oldCCL);
+        }
+
+        // Set available status depending upon startup success
+        if (ok) {
+            if (log.isDebugEnabled()) {
+                log.debug("Starting completed");
+            }
+        } else {
+            log.error(sm.getString("standardContext.startFailed", getName()));
+        }
+
+        startTime=System.currentTimeMillis();
+
+        // Send j2ee.state.running notification
+        if (ok && (this.getObjectName() != null)) {
+            Notification notification =
+                    new Notification("j2ee.state.running", this.getObjectName(),
+                            sequenceNumber.getAndIncrement());
+            broadcaster.sendNotification(notification);
+        }
+
+        // The WebResources implementation caches references to JAR files. On
+        // some platforms these references may lock the JAR files. Since web
+        // application start is likely to have read from lots of JARs, trigger
+        // a clean-up now.
+        getResources().gc();
+
+        // Reinitializing if something went wrong
+        if (!ok) {
+            setState(LifecycleState.FAILED);
+            // Send j2ee.object.failed notification
+            if (this.getObjectName() != null) {
+                Notification notification = new Notification("j2ee.object.failed",
+                        this.getObjectName(), sequenceNumber.getAndIncrement());
+                broadcaster.sendNotification(notification);
+            }
+        } else {
+            setState(LifecycleState.STARTING);
+        }
+    }
+
+
+    /**
+     * Merge the context initialization parameters specified in the application
+     * deployment descriptor with the application parameters described in the
+     * server configuration, respecting the <code>override</code> property of
+     * the application parameters appropriately.
+     */
+    private void mergeParameters() {
+        Map<String,String> mergedParams = new HashMap<>();
+
+        String names[] = findParameters();
+        for (String s : names) {
+            mergedParams.put(s, findParameter(s));
+        }
+
+        ApplicationParameter params[] = findApplicationParameters();
+        for (ApplicationParameter param : params) {
+            if (param.getOverride()) {
+                if (mergedParams.get(param.getName()) == null) {
+                    mergedParams.put(param.getName(),
+                            param.getValue());
+                }
+            } else {
+                mergedParams.put(param.getName(), param.getValue());
+            }
+        }
+
+        ServletContext sc = getServletContext();
+        for (Map.Entry<String,String> entry : mergedParams.entrySet()) {
+            sc.setInitParameter(entry.getKey(), entry.getValue());
+        }
+
+    }
+
+    /**
+     * Unbind thread and restore the specified context classloader.
+     *
+     * @param oldContextClassLoader the previous classloader
+     */
+    protected void unbindThread(ClassLoader oldContextClassLoader) {
+
+        if (isUseNaming()) {
+            ContextBindings.unbindThread(this, getNamingToken());
+        }
+
+        unbind(false, oldContextClassLoader);
+    }
+
+
+    private static class NoPluggabilityServletContext
+            implements ServletContext {
+
+        private final ServletContext sc;
+
+        public NoPluggabilityServletContext(ServletContext sc) {
+            this.sc = sc;
+        }
+
+        @Override
+        public String getContextPath() {
+            return sc.getContextPath();
+        }
+
+        @Override
+        public ServletContext getContext(String uripath) {
+            return sc.getContext(uripath);
+        }
+
+        @Override
+        public int getMajorVersion() {
+            return sc.getMajorVersion();
+        }
+
+        @Override
+        public int getMinorVersion() {
+            return sc.getMinorVersion();
+        }
+
+        @Override
+        public int getEffectiveMajorVersion() {
+            return sc.getEffectiveMajorVersion();
+        }
+
+        @Override
+        public int getEffectiveMinorVersion() {
+            return sc.getEffectiveMinorVersion();
+        }
+
+        @Override
+        public String getMimeType(String file) {
+            return sc.getMimeType(file);
+        }
+
+        @Override
+        public Set<String> getResourcePaths(String path) {
+            return sc.getResourcePaths(path);
+        }
+
+        @Override
+        public URL getResource(String path) throws MalformedURLException {
+            return sc.getResource(path);
+        }
+
+        @Override
+        public InputStream getResourceAsStream(String path) {
+            return sc.getResourceAsStream(path);
+        }
+
+        @Override
+        public RequestDispatcher getRequestDispatcher(String path) {
+            return sc.getRequestDispatcher(path);
+        }
+
+        @Override
+        public RequestDispatcher getNamedDispatcher(String name) {
+            return sc.getNamedDispatcher(name);
+        }
+
+        @Override
+        public void log(String msg) {
+            sc.log(msg);
+        }
+
+        @Override
+        public void log(String message, Throwable throwable) {
+            sc.log(message, throwable);
+        }
+
+        @Override
+        public String getRealPath(String path) {
+            return sc.getRealPath(path);
+        }
+
+        @Override
+        public String getServerInfo() {
+            return sc.getServerInfo();
+        }
+
+        @Override
+        public String getInitParameter(String name) {
+            return sc.getInitParameter(name);
+        }
+
+        @Override
+        public Enumeration<String> getInitParameterNames() {
+            return sc.getInitParameterNames();
+        }
+
+        @Override
+        public boolean setInitParameter(String name, String value) {
+            throw new UnsupportedOperationException(
+                    sm.getString("noPluggabilityServletContext.notAllowed"));
+        }
+
+        @Override
+        public Object getAttribute(String name) {
+            return sc.getAttribute(name);
+        }
+
+        @Override
+        public Enumeration<String> getAttributeNames() {
+            return sc.getAttributeNames();
+        }
+
+        @Override
+        public void setAttribute(String name, Object object) {
+            sc.setAttribute(name, object);
+        }
+
+        @Override
+        public void removeAttribute(String name) {
+            sc.removeAttribute(name);
+        }
+
+        @Override
+        public String getServletContextName() {
+            return sc.getServletContextName();
+        }
+
+        @Override
+        public ServletRegistration.Dynamic addServlet(String servletName, String className) {
+            throw new UnsupportedOperationException(
+                    sm.getString("noPluggabilityServletContext.notAllowed"));
+        }
+
+        @Override
+        public ServletRegistration.Dynamic addServlet(String servletName, Servlet servlet) {
+            throw new UnsupportedOperationException(
+                    sm.getString("noPluggabilityServletContext.notAllowed"));
+        }
+
+        @Override
+        public ServletRegistration.Dynamic addServlet(String servletName,
+                                                      Class<? extends Servlet> servletClass) {
+            throw new UnsupportedOperationException(
+                    sm.getString("noPluggabilityServletContext.notAllowed"));
+        }
+
+        @Override
+        public ServletRegistration.Dynamic addJspFile(String jspName, String jspFile) {
+            throw new UnsupportedOperationException(
+                    sm.getString("noPluggabilityServletContext.notAllowed"));
+        }
+
+        @Override
+        public <T extends Servlet> T createServlet(Class<T> c)
+                throws ServletException {
+            throw new UnsupportedOperationException(
+                    sm.getString("noPluggabilityServletContext.notAllowed"));
+        }
+
+        @Override
+        public ServletRegistration getServletRegistration(String servletName) {
+            throw new UnsupportedOperationException(
+                    sm.getString("noPluggabilityServletContext.notAllowed"));
+        }
+
+        @Override
+        public Map<String,? extends ServletRegistration> getServletRegistrations() {
+            throw new UnsupportedOperationException(
+                    sm.getString("noPluggabilityServletContext.notAllowed"));
+        }
+
+        @Override
+        public jakarta.servlet.FilterRegistration.Dynamic addFilter(
+                String filterName, String className) {
+            throw new UnsupportedOperationException(
+                    sm.getString("noPluggabilityServletContext.notAllowed"));
+        }
+
+        @Override
+        public jakarta.servlet.FilterRegistration.Dynamic addFilter(
+                String filterName, Filter filter) {
+            throw new UnsupportedOperationException(
+                    sm.getString("noPluggabilityServletContext.notAllowed"));
+        }
+
+        @Override
+        public jakarta.servlet.FilterRegistration.Dynamic addFilter(
+                String filterName, Class<? extends Filter> filterClass) {
+            throw new UnsupportedOperationException(
+                    sm.getString("noPluggabilityServletContext.notAllowed"));
+        }
+
+        @Override
+        public <T extends Filter> T createFilter(Class<T> c)
+                throws ServletException {
+            throw new UnsupportedOperationException(
+                    sm.getString("noPluggabilityServletContext.notAllowed"));
+        }
+
+        @Override
+        public FilterRegistration getFilterRegistration(String filterName) {
+            throw new UnsupportedOperationException(
+                    sm.getString("noPluggabilityServletContext.notAllowed"));
+        }
+
+        @Override
+        public Map<String,? extends FilterRegistration> getFilterRegistrations() {
+            throw new UnsupportedOperationException(
+                    sm.getString("noPluggabilityServletContext.notAllowed"));
+        }
+
+        @Override
+        public SessionCookieConfig getSessionCookieConfig() {
+            throw new UnsupportedOperationException(
+                    sm.getString("noPluggabilityServletContext.notAllowed"));
+        }
+
+        @Override
+        public void setSessionTrackingModes(
+                Set<SessionTrackingMode> sessionTrackingModes) {
+            throw new UnsupportedOperationException(
+                    sm.getString("noPluggabilityServletContext.notAllowed"));
+        }
+
+        @Override
+        public Set<SessionTrackingMode> getDefaultSessionTrackingModes() {
+            return sc.getDefaultSessionTrackingModes();
+        }
+
+        @Override
+        public Set<SessionTrackingMode> getEffectiveSessionTrackingModes() {
+            return sc.getEffectiveSessionTrackingModes();
+        }
+
+        @Override
+        public void addListener(String className) {
+            throw new UnsupportedOperationException(
+                    sm.getString("noPluggabilityServletContext.notAllowed"));
+        }
+
+        @Override
+        public <T extends EventListener> void addListener(T t) {
+            throw new UnsupportedOperationException(
+                    sm.getString("noPluggabilityServletContext.notAllowed"));
+        }
+
+        @Override
+        public void addListener(Class<? extends EventListener> listenerClass) {
+            throw new UnsupportedOperationException(
+                    sm.getString("noPluggabilityServletContext.notAllowed"));
+        }
+
+        @Override
+        public <T extends EventListener> T createListener(Class<T> c)
+                throws ServletException {
+            throw new UnsupportedOperationException(
+                    sm.getString("noPluggabilityServletContext.notAllowed"));
+        }
+
+        @Override
+        public JspConfigDescriptor getJspConfigDescriptor() {
+            return sc.getJspConfigDescriptor();
+        }
+
+        @Override
+        public ClassLoader getClassLoader() {
+            return sc.getClassLoader();
+        }
+
+        @Override
+        public void declareRoles(String... roleNames) {
+            throw new UnsupportedOperationException(
+                    sm.getString("noPluggabilityServletContext.notAllowed"));
+        }
+
+        @Override
+        public String getVirtualServerName() {
+            return sc.getVirtualServerName();
+        }
+
+        @Override
+        public int getSessionTimeout() {
+            return sc.getSessionTimeout();
+        }
+
+        @Override
+        public void setSessionTimeout(int sessionTimeout) {
+            throw new UnsupportedOperationException(
+                    sm.getString("noPluggabilityServletContext.notAllowed"));
+        }
+
+        @Override
+        public String getRequestCharacterEncoding() {
+            return sc.getRequestCharacterEncoding();
+        }
+
+        @Override
+        public void setRequestCharacterEncoding(String encoding) {
+            throw new UnsupportedOperationException(
+                    sm.getString("noPluggabilityServletContext.notAllowed"));
+        }
+
+        @Override
+        public String getResponseCharacterEncoding() {
+            return sc.getResponseCharacterEncoding();
+        }
+
+        @Override
+        public void setResponseCharacterEncoding(String encoding) {
+            throw new UnsupportedOperationException(
+                    sm.getString("noPluggabilityServletContext.notAllowed"));
+        }
+    }
+
 }

@@ -336,4 +336,14 @@ public interface Container extends Lifecycle{
      */
     public int getBackgroundProcessorDelay();
 
+    /**
+     * Get the Cluster for this container.
+     *
+     * @return The Cluster with which this Container is associated. If there is
+     *         no associated Cluster, return the Cluster associated with our
+     *         parent Container (if any); otherwise return <code>null</code>.
+     */
+    public Cluster getCluster();
+
+
 }

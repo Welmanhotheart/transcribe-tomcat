@@ -17,6 +17,7 @@ import org.apache.tomcat.util.descriptor.web.ErrorPage;
 import org.apache.tomcat.util.descriptor.web.FilterDef;
 import org.apache.tomcat.util.descriptor.web.FilterMap;
 import org.apache.tomcat.util.descriptor.web.SecurityConstraint;
+import org.apache.tomcat.util.http.CookieProcessor;
 import org.apache.tomcat.util.res.StringManager;
 
 import java.io.File;
@@ -651,6 +652,11 @@ public class FailedContext  extends LifecycleMBeanBase implements Context {
     @Override
     public boolean isServlet22() {
         return false;
+    }
+
+    @Override
+    public void setCookieProcessor(CookieProcessor cookieProcessor) {
+
     }
 
     @Override

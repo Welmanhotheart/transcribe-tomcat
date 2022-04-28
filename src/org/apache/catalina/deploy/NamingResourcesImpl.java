@@ -204,7 +204,105 @@ public class NamingResourcesImpl extends LifecycleMBeanBase
         }
     }
 
+    /**
+     * @return the defined local EJB resource references for this application.
+     * If there are none, a zero-length array is returned.
+     */
+    public ContextLocalEjb[] findLocalEjbs() {
 
+        synchronized (localEjbs) {
+            ContextLocalEjb results[] = new ContextLocalEjb[localEjbs.size()];
+            return localEjbs.values().toArray(results);
+        }
+
+    }
+
+
+    /**
+     * @return the defined EJB resource references for this application.
+     * If there are none, a zero-length array is returned.
+     */
+    public ContextEjb[] findEjbs() {
+
+        synchronized (ejbs) {
+            ContextEjb results[] = new ContextEjb[ejbs.size()];
+            return ejbs.values().toArray(results);
+        }
+
+    }
+
+    /**
+     * @return the set of defined environment entries for this web
+     * application.  If none have been defined, a zero-length array
+     * is returned.
+     */
+    public ContextEnvironment[] findEnvironments() {
+
+        synchronized (envs) {
+            ContextEnvironment results[] = new ContextEnvironment[envs.size()];
+            return envs.values().toArray(results);
+        }
+
+    }
+
+
+    /**
+     * @return the defined message destination references for this application.
+     * If there are none, a zero-length array is returned.
+     */
+    public MessageDestinationRef[] findMessageDestinationRefs() {
+
+        synchronized (mdrs) {
+            MessageDestinationRef results[] =
+                    new MessageDestinationRef[mdrs.size()];
+            return mdrs.values().toArray(results);
+        }
+
+    }
+
+
+
+    /**
+     * @return the set of resource environment reference names for this
+     * web application.  If none have been specified, a zero-length
+     * array is returned.
+     */
+    public ContextResourceEnvRef[] findResourceEnvRefs() {
+
+        synchronized (resourceEnvRefs) {
+            ContextResourceEnvRef results[] = new ContextResourceEnvRef[resourceEnvRefs.size()];
+            return resourceEnvRefs.values().toArray(results);
+        }
+
+    }
+
+
+
+    /**
+     * @return the defined resource references for this application.  If
+     * none have been defined, a zero-length array is returned.
+     */
+    public ContextResource[] findResources() {
+
+        synchronized (resources) {
+            ContextResource results[] = new ContextResource[resources.size()];
+            return resources.values().toArray(results);
+        }
+
+    }
+
+    /**
+     * @return the defined web service references for this application.  If
+     * none have been defined, a zero-length array is returned.
+     */
+    public ContextService[] findServices() {
+
+        synchronized (services) {
+            ContextService results[] = new ContextService[services.size()];
+            return services.values().toArray(results);
+        }
+
+    }
 
     /**
      * Add a resource reference for this web application.

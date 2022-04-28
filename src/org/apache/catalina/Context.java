@@ -12,6 +12,7 @@ import org.apache.tomcat.util.descriptor.web.ErrorPage;
 import org.apache.tomcat.util.descriptor.web.FilterDef;
 import org.apache.tomcat.util.descriptor.web.FilterMap;
 import org.apache.tomcat.util.descriptor.web.SecurityConstraint;
+import org.apache.tomcat.util.http.CookieProcessor;
 
 import java.net.URL;
 import java.util.Set;
@@ -739,6 +740,72 @@ public interface Context extends Container, ContextBind {
     public void setManager(Manager manager);
 
     /**
+     * @return the base name to use for WARs, directories or context.xml files
+     * for this context.
+     */
+    public String getBaseName();
+
+    /**
+     * @return  the token necessary for operations on the associated JNDI naming
+     * context.
+     */
+    public Object getNamingToken();
+
+    /**
+     * Return the "correctly configured" flag for this Context.
+     *
+     * @return <code>true</code> if the Context has been correctly configured,
+     *         otherwise <code>false</code>
+     */
+    public boolean getConfigured();
+
+    /**
+     * Factory method to create and return a new InstanceManager
+     * instance. This can be used for framework integration or easier
+     * configuration with custom Context implementations.
+     * @return the instance manager
+     */
+    public InstanceManager createInstanceManager();
+
+    /**
+     * Obtain the registered application event listeners.
+     *
+     * @return An array containing the application event listener instances for
+     *         this web application in the order they were specified in the web
+     *         application deployment descriptor
+     */
+    public Object[] getApplicationEventListeners();
+
+    /**
+     * Store the set of initialized application event listener objects,
+     * in the order they were specified in the web application deployment
+     * descriptor, for this application.
+     *
+     * @param listeners The set of instantiated listener objects.
+     */
+    public void setApplicationEventListeners(Object listeners[]);
+
+    /**
+     * Store the set of initialized application lifecycle listener objects,
+     * in the order they were specified in the web application deployment
+     * descriptor, for this application.
+     *
+     * @param listeners The set of instantiated listener objects.
+     */
+    public void setApplicationLifecycleListeners(Object listeners[]);
+
+
+    /**
+     * Obtain the registered application lifecycle listeners.
+     *
+     * @return An array containing the application lifecycle listener instances
+     *         for this web application in the order they were specified in the
+     *         web application deployment descriptor
+     */
+    public Object[] getApplicationLifecycleListeners();
+
+
+    /**
      * Add a new servlet mapping, replacing any existing mapping for
      * the specified pattern.
      *
@@ -768,5 +835,18 @@ public interface Context extends Container, ContextBind {
      * @return <code>true</code> for a legacy Servlet 2.2 webapp
      */
     boolean isServlet22();
+
+
+    /**
+     * Sets the {@link CookieProcessor} that will be used to process cookies
+     * for this Context.
+     *
+     * @param cookieProcessor   The new cookie processor
+     *
+     * @throws IllegalArgumentException If a {@code null} CookieProcessor is
+     *         specified
+     */
+    public void setCookieProcessor(CookieProcessor cookieProcessor);
+
 
 }

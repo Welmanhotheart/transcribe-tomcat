@@ -45,6 +45,8 @@ public abstract class ContainerBase extends LifecycleMBeanBase implements Contai
      */
     protected final Pipeline pipeline = new StandardPipeline(this);
 
+
+
     /**
      * The broadcaster that sends j2ee notifications.
      */
@@ -61,6 +63,11 @@ public abstract class ContainerBase extends LifecycleMBeanBase implements Contai
      * The processor delay for this component.
      */
     protected int backgroundProcessorDelay = -1;
+
+    /**
+     * The distributable flag for this web application.
+     */
+    private boolean distributable = false;
 
 
     /**
@@ -577,6 +584,30 @@ public abstract class ContainerBase extends LifecycleMBeanBase implements Contai
     @Override
     protected void stopInternal() throws LifecycleException {
 
+    }
+
+    /**
+     * Return the Cluster with which this Container is associated.  If there is
+     * no associated Cluster, return the Cluster associated with our parent
+     * Container (if any); otherwise return <code>null</code>.
+     */
+    @Override
+    public Cluster getCluster() {
+        Lock readLock = clusterLock.readLock();
+        readLock.lock();
+        try {
+            if (cluster != null) {
+                return cluster;
+            }
+
+            if (parent != null) {
+                return parent.getCluster();
+            }
+
+            return null;
+        } finally {
+            readLock.unlock();
+        }
     }
 
     /**

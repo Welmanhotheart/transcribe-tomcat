@@ -8,4 +8,9 @@ public interface Realm extends Contained{
      * throwables will be caught and logged.
      */
     public void backgroundProcess();
+
+    /**
+     * @return the CredentialHandler configured for this Realm.
+     */
+    public CredentialHandler getCredentialHandler();
 }

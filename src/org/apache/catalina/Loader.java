@@ -25,4 +25,12 @@ public interface Loader {
     public void setContext(Context context);
 
 
+    /**
+     * Set the "follow standard delegation model" flag used to configure
+     * our ClassLoader.
+     *
+     * @param delegate The new flag
+     */
+    public void setDelegate(boolean delegate);
+
 }
