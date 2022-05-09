@@ -1,8 +1,6 @@
 package org.apache.catalina.core;
 
-import jakarta.servlet.ServletContext;
-import jakarta.servlet.SessionCookieConfig;
-import jakarta.servlet.SessionTrackingMode;
+import jakarta.servlet.*;
 
 import java.io.InputStream;
 import java.net.MalformedURLException;
@@ -25,6 +23,12 @@ public class ApplicationContext  implements ServletContext {
      * The context attributes for this context.
      */
     protected Map<String,Object> attributes = new ConcurrentHashMap<>();
+    /**
+     * Flag that indicates if a new {@link ServletContextListener} may be added
+     * to the application. Once the first {@link ServletContextListener} is
+     * called, no more may be added.
+     */
+    private boolean newServletContextListenerAllowed = true;
 
 
     /**
@@ -67,6 +71,75 @@ public class ApplicationContext  implements ServletContext {
     @Override
     public InputStream getResourceAsStream(String path) {
         return null;
+    }
+
+    @Override
+    public String getContextPath() {
+        return null;
+    }
+
+    @Override
+    public ServletContext getContext(String uripath) {
+        return null;
+    }
+
+    @Override
+    public int getMajorVersion() {
+        return 0;
+    }
+
+    @Override
+    public int getMinorVersion() {
+        return 0;
+    }
+
+    @Override
+    public int getEffectiveMajorVersion() {
+        return 0;
+    }
+
+    @Override
+    public int getEffectiveMinorVersion() {
+        return 0;
+    }
+
+    @Override
+    public String getMimeType(String file) {
+        return null;
+    }
+
+    @Override
+    public Set<String> getResourcePaths(String path) {
+        return null;
+    }
+
+    @Override
+    public RequestDispatcher getRequestDispatcher(String path) {
+        return null;
+    }
+
+    @Override
+    public RequestDispatcher getNamedDispatcher(String name) {
+        return null;
+    }
+
+    @Override
+    public void log(String msg) {
+
+    }
+
+    @Override
+    public void log(String message, Throwable throwable) {
+
+    }
+
+    @Override
+    public String getRealPath(String path) {
+        return null;
+    }
+
+    protected void setNewServletContextListenerAllowed(boolean allowed) {
+        this.newServletContextListenerAllowed = allowed;
     }
 
 

@@ -1,6 +1,7 @@
 package org.apache.catalina;
 
 import jakarta.servlet.MultipartConfigElement;
+import jakarta.servlet.ServletException;
 
 public interface Wrapper extends Container {
 
@@ -131,5 +132,22 @@ public interface Wrapper extends Container {
      */
     public void setMultipartConfigElement(
             MultipartConfigElement multipartConfig);
+
+    /**
+     * @return the load-on-startup order value (negative value means
+     * load on first call).
+     */
+    public int getLoadOnStartup();
+
+    /**
+     * Load and initialize an instance of this Servlet, if there is not already
+     * at least one initialized instance.  This can be used, for example, to
+     * load Servlets that are marked in the deployment descriptor to be loaded
+     * at server startup time.
+     *
+     * @exception ServletException if the Servlet init() method threw
+     *  an exception or if some other loading problem occurs
+     */
+    public void load() throws ServletException;
 
 }

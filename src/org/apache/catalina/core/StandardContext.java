@@ -215,6 +215,13 @@ public class StandardContext extends ContainerBase
      */
     private final Set<Object> noPluggabilityListeners = new HashSet<>();
 
+    /**
+     * The wrapped version of the associated ServletContext that is presented
+     * to listeners that are required to have limited access to ServletContext
+     * methods. See Servlet 3.1 section 4.4.
+     */
+    private NoPluggabilityServletContext noPluggabilityServletContext = null;
+
 
     /**
      * The set of instantiated application lifecycle listener objects. Note that
@@ -388,6 +395,15 @@ public class StandardContext extends ContainerBase
      */
     private Map<ServletContainerInitializer,Set<Class<?>>> initializers =
             new LinkedHashMap<>();
+
+    /**
+     * The set of filter configurations (and associated filter instances) we
+     * have initialized, keyed by filter name.
+     */
+    private Map<String, ApplicationFilterConfig> filterConfigs = new HashMap<>();
+
+
+    private final Object applicationParametersLock = new Object();
 
 
     /**
@@ -2280,6 +2296,127 @@ public class StandardContext extends ContainerBase
             setState(LifecycleState.STARTING);
         }
     }
+
+    /**
+     * Load and initialize all servlets marked "load on startup" in the
+     * web application deployment descriptor.
+     *
+     * @param children Array of wrappers for all currently defined
+     *  servlets (including those not declared load on startup)
+     * @return <code>true</code> if load on startup was considered successful
+     */
+    public boolean loadOnStartup(Container children[]) {
+
+        // Collect "load on startup" servlets that need to be initialized
+        TreeMap<Integer, ArrayList<Wrapper>> map = new TreeMap<>();
+        for (Container child : children) {
+            Wrapper wrapper = (Wrapper) child;
+            int loadOnStartup = wrapper.getLoadOnStartup();
+            if (loadOnStartup < 0) {
+                continue;
+            }
+            Integer key = Integer.valueOf(loadOnStartup);
+            ArrayList<Wrapper> list = map.get(key);
+            if (list == null) {
+                list = new ArrayList<>();
+                map.put(key, list);
+            }
+            list.add(wrapper);
+        }
+
+        // Load the collected "load on startup" servlets
+        for (ArrayList<Wrapper> list : map.values()) {
+            for (Wrapper wrapper : list) {
+                try {
+                    wrapper.load();
+                } catch (ServletException e) {
+                    getLogger().error(sm.getString("standardContext.loadOnStartup.loadException",
+                            getName(), wrapper.getName()), StandardWrapper.getRootCause(e));
+                    // NOTE: load errors (including a servlet that throws
+                    // UnavailableException from the init() method) are NOT
+                    // fatal to application startup
+                    // unless failCtxIfServletStartFails="true" is specified
+                    if(getComputedFailCtxIfServletStartFails()) {
+                        return false;
+                    }
+                }
+            }
+        }
+        return true;
+
+    }
+
+    protected boolean getComputedFailCtxIfServletStartFails() {
+        if(failCtxIfServletStartFails != null) {
+            return failCtxIfServletStartFails.booleanValue();
+        }
+        //else look at Host config
+        if(getParent() instanceof StandardHost) {
+            return ((StandardHost)getParent()).isFailCtxIfServletStartFails();
+        }
+        //else
+        return false;
+    }
+
+
+    /**
+     * Configure and initialize the set of filters for this Context.
+     * @return <code>true</code> if all filter initialization completed
+     * successfully, or <code>false</code> otherwise.
+     */
+    public boolean filterStart() {
+
+        if (getLogger().isDebugEnabled()) {
+            getLogger().debug("Starting filters");
+        }
+        // Instantiate and record a FilterConfig for each defined filter
+        boolean ok = true;
+        synchronized (filterConfigs) {
+            filterConfigs.clear();
+            for (Map.Entry<String,FilterDef> entry : filterDefs.entrySet()) {
+                String name = entry.getKey();
+                if (getLogger().isDebugEnabled()) {
+                    getLogger().debug(" Starting filter '" + name + "'");
+                }
+                try {
+                    ApplicationFilterConfig filterConfig =
+                            new ApplicationFilterConfig(this, entry.getValue());
+                    filterConfigs.put(name, filterConfig);
+                } catch (Throwable t) {
+                    t = ExceptionUtils.unwrapInvocationTargetException(t);
+                    ExceptionUtils.handleThrowable(t);
+                    getLogger().error(sm.getString(
+                            "standardContext.filterStart", name), t);
+                    ok = false;
+                }
+            }
+        }
+
+        return ok;
+    }
+
+    private void checkConstraintsForUncoveredMethods(
+            SecurityConstraint[] constraints) {
+        SecurityConstraint[] newConstraints =
+                SecurityConstraint.findUncoveredHttpMethods(constraints,
+                        getDenyUncoveredHttpMethods(), getLogger());
+        for (SecurityConstraint constraint : newConstraints) {
+            addConstraint(constraint);
+        }
+    }
+
+    /**
+     * Return the set of application parameters for this application.
+     */
+    @Override
+    public ApplicationParameter[] findApplicationParameters() {
+
+        synchronized (applicationParametersLock) {
+            return applicationParameters;
+        }
+
+    }
+
 
 
     /**
